@@ -21,6 +21,9 @@ import {
 import { 
   getAuth, 
   signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword,
+  signInWithPopup,
+  GoogleAuthProvider,
   signOut, 
   onAuthStateChanged,
   browserLocalPersistence,
@@ -36,24 +39,24 @@ import {
 
 // ============================================================================
 // 1. FIREBASE CONFIGURATION OBJECT
-// Replace the placeholder values with your Firebase Console Project credentials.
-// Or set window.CUSTOM_FIREBASE_CONFIG in HTML / environment before loading.
+// Configured for project: spin-win-project
 // ============================================================================
 export const firebaseConfig = window.CUSTOM_FIREBASE_CONFIG || {
-  apiKey: "YOUR_API_KEY",
+  apiKey: "AIzaSyC1JksCTob3MMm9KIr-Apr0g8dWLopI54c",
   authDomain: "spin-win-project.firebaseapp.com",
   projectId: "spin-win-project",
-  storageBucket: "spin-win-project.appspot.com",
-  messagingSenderId: "123456789012",
-  appId: "1:123456789012:web:abcdef1234567890"
+  storageBucket: "spin-win-project.firebasestorage.app",
+  messagingSenderId: "420283679910",
+  appId: "1:420283679910:web:7359fde469092780082067",
+  measurementId: "G-CB34DD16N0"
 };
 
-// Check if credentials have been replaced with real project keys
+// Check if credentials are valid
 export function isFirebaseConfigured() {
   return firebaseConfig && 
     firebaseConfig.apiKey && 
-    firebaseConfig.apiKey !== "YOUR_API_KEY" && 
-    !firebaseConfig.apiKey.startsWith("YOUR_");
+    firebaseConfig.apiKey.startsWith("AIzaSy") &&
+    firebaseConfig.projectId === "spin-win-project";
 }
 
 // Initialize Firebase App
@@ -92,6 +95,9 @@ export {
 };
 export { 
   signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword,
+  signInWithPopup,
+  GoogleAuthProvider,
   signOut, 
   onAuthStateChanged 
 };
