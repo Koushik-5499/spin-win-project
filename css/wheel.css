@@ -287,29 +287,81 @@
   font-weight: 700;
 }
 
-/* Responsive Wheel Scaling */
-@media (max-width: 480px) {
+/* Responsive Wheel Scaling for All Mobile Devices & Phones */
+@media (max-width: 600px) {
+  .wheel-section {
+    margin: 0.5rem 0 1.5rem;
+  }
   .wheel-outer-wrapper {
-    width: 320px;
-    height: 320px;
+    width: min(84vw, 350px);
+    height: min(84vw, 350px);
+    margin: 0 auto 1.25rem;
+  }
+  .wheel-bezel {
+    inset: -8px;
+    padding: 4px;
+  }
+  .wheel-inner-bezel {
+    inset: -4px;
+    border-width: 3px;
   }
   .wheel-center-hub {
-    width: 68px;
-    height: 68px;
+    width: 72px;
+    height: 72px;
   }
   .hub-text {
-    font-size: 0.78rem;
+    font-size: 0.82rem;
   }
   .hub-sub {
-    font-size: 0.48rem;
+    font-size: 0.5rem;
   }
   .wheel-pointer {
-    width: 36px;
-    height: 44px;
+    width: 34px;
+    height: 42px;
     top: -14px;
   }
   .spin-btn-main {
     font-size: 1.15rem;
-    padding: 1rem 1.5rem;
+    padding: 0.95rem 1.75rem;
+    max-width: 340px;
+    letter-spacing: 1px;
+  }
+  .user-status-card {
+    padding: 0.55rem 0.95rem;
+    font-size: 0.78rem;
+  }
+  .prizes-legend {
+    gap: 0.45rem;
+    margin-top: 1rem;
+  }
+  .legend-chip {
+    padding: 0.25rem 0.65rem;
+    font-size: 0.75rem;
+  }
+}
+
+@media (max-width: 380px) {
+  .wheel-outer-wrapper {
+    width: 290px;
+    height: 290px;
+  }
+  .wheel-center-hub {
+    width: 62px;
+    height: 62px;
+  }
+  .hub-text {
+    font-size: 0.72rem;
+  }
+  .hub-sub {
+    font-size: 0.44rem;
+  }
+  .wheel-pointer {
+    width: 28px;
+    height: 36px;
+    top: -12px;
+  }
+  .spin-btn-main {
+    font-size: 1.05rem;
+    padding: 0.85rem 1.25rem;
   }
 }

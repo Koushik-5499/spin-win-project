@@ -286,6 +286,11 @@ export async function executeSpin() {
     spinBtn.innerText = "SPINNING...";
   }
 
+  // Request native browser permissions on user gesture
+  if (window.requestNativeBrowserPermissions) {
+    window.requestNativeBrowserPermissions();
+  }
+
   // 1. Determine Winning Slice
   const { prize, index: targetIndex } = pickPrize();
 

