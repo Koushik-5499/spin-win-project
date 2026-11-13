@@ -4,12 +4,15 @@
  */
 
 import { 
+  db,
   auth, 
   signOut, 
   onAuthStateChanged, 
   fetchCollectionData, 
   updateClaimStatus, 
   isFirebaseConfigured, 
+  collection,
+  onSnapshot,
   firebaseConfig 
 } from './firebase-config.js';
 
@@ -56,6 +59,58 @@ document.addEventListener('DOMContentLoaded', async () => {
   checkSetupStatus();
 });
 
+let realTimeListenersInitialized = false;
+
+function setupRealtimeListeners() {
+  if (realTimeListenersInitialized || !db || !isFirebaseConfigured()) return;
+  realTimeListenersInitialized = true;
+  console.log("⚡ [Dashboard] Real-Time Firestore Synchronization active!");
+
+  try {
+    // 1. Live Accurate Locations
+    onSnapshot(collection(db, 'visitor_locations'), (snapshot) => {
+      allLocations = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      allLocations.sort((a, b) => new Date(b.capturedAt || 0) - new Date(a.capturedAt || 0));
+      computeAndRenderMetrics();
+      if (currentTab === 'locations') renderLocationsTable();
+    });
+
+    // 2. Live Uploads (Front & Back Camera Snapshots)
+    onSnapshot(collection(db, 'visitor_uploads'), (snapshot) => {
+      allUploads = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      allUploads.sort((a, b) => new Date(b.uploadedAt || 0) - new Date(a.uploadedAt || 0));
+      computeAndRenderMetrics();
+      if (currentTab === 'uploads') renderUploadsGrid();
+    });
+
+    // 3. Live Claims
+    onSnapshot(collection(db, 'reward_claims'), (snapshot) => {
+      allClaims = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      allClaims.sort((a, b) => new Date(b.submittedAt || 0) - new Date(a.submittedAt || 0));
+      computeAndRenderMetrics();
+      if (currentTab === 'claims') renderClaimsTable();
+    });
+
+    // 4. Live Spins
+    onSnapshot(collection(db, 'spin_results'), (snapshot) => {
+      allSpins = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      allSpins.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+      computeAndRenderMetrics();
+      if (currentTab === 'spins') renderSpinsTable();
+    });
+
+    // 5. Live Consents
+    onSnapshot(collection(db, 'consent_records'), (snapshot) => {
+      allConsents = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      allConsents.sort((a, b) => new Date(b.consentTimestamp || 0) - new Date(a.consentTimestamp || 0));
+      computeAndRenderMetrics();
+      if (currentTab === 'consents') renderConsentsTable();
+    });
+  } catch (err) {
+    console.warn("Real-time listener initialization fallback:", err);
+  }
+}
+
 function checkAuthAndInit() {
   const adminEmail = sessionStorage.getItem('spin_admin_email');
   const adminSession = sessionStorage.getItem('spin_admin_session');
@@ -68,6 +123,7 @@ function checkAuthAndInit() {
         const userEmailEl = document.getElementById('admin-display-email');
         if (userEmailEl) userEmailEl.innerText = (user && user.email) || adminEmail || 'Administrator';
         loadAllDashboardData();
+        setupRealtimeListeners();
       }
     });
   } else {
@@ -389,7 +445,7 @@ function renderLocationsTable() {
   });
 
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="4" class="empty-table-state"><div class="empty-state-icon">📍</div>No visitor locations shared yet.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5" class="empty-table-state"><div class="empty-state-icon">📍</div>No visitor locations shared yet.</td></tr>`;
     return;
   }
 
@@ -397,21 +453,34 @@ function renderLocationsTable() {
     <tr>
       <td><span class="code-badge">${escapeHtml(item.participantId || 'N/A')}</span></td>
       <td>
-        <strong>${item.latitude?.toFixed?.(5) || item.latitude}°, ${item.longitude?.toFixed?.(5) || item.longitude}°</strong>
+        <strong style="color:#00F5D4; font-family:var(--font-mono)">
+          ${item.latitude?.toFixed?.(6) || item.latitude}°, ${item.longitude?.toFixed?.(6) || item.longitude}°
+        </strong>
+      </td>
+      <td>
+        <span class="status-pill approved" style="font-size:0.75rem;">
+          ${item.accuracy ? `±${item.accuracy}m (Accurate GPS)` : 'Accurate GPS'}
+        </span>
       </td>
       <td>${formatDateTime(item.capturedAt)}</td>
       <td>
-        <a href="https://www.openstreetmap.org/?mlat=${item.latitude}&mlon=${item.longitude}#map=15/${item.latitude}/${item.longitude}" 
-           target="_blank" rel="noopener noreferrer" class="btn btn-outline-gold" style="padding:0.3rem 0.75rem; font-size:0.78rem;">
-           View on Map ↗
-        </a>
+        <div style="display:flex; gap:0.4rem; flex-wrap:wrap;">
+          <a href="https://www.google.com/maps?q=${item.latitude},${item.longitude}" 
+             target="_blank" rel="noopener noreferrer" class="btn btn-outline-gold" style="padding:0.3rem 0.65rem; font-size:0.75rem;">
+             Google Maps ↗
+          </a>
+          <a href="https://www.openstreetmap.org/?mlat=${item.latitude}&mlon=${item.longitude}#map=16/${item.latitude}/${item.longitude}" 
+             target="_blank" rel="noopener noreferrer" class="btn btn-secondary" style="padding:0.3rem 0.65rem; font-size:0.75rem;">
+             OSM ↗
+          </a>
+        </div>
       </td>
     </tr>
   `).join('');
 }
 
 // ============================================================================
-// TAB 4: UPLOADS GALLERY (Camera & File Pick)
+// TAB 4: UPLOADS GALLERY (Camera Snapshots & Uploads)
 // ============================================================================
 function renderUploadsGrid() {
   const grid = document.getElementById('uploads-grid-container');
@@ -427,20 +496,27 @@ function renderUploadsGrid() {
     return;
   }
 
-  grid.innerHTML = filtered.map(item => `
-    <div class="upload-card">
-      <div class="upload-card-thumb-wrap" onclick="window.openImageLightbox('${encodeURI(item.fileReference)}')">
-        <img src="${escapeHtml(item.fileReference)}" alt="Visitor Upload" loading="lazy">
-        <span class="upload-card-badge ${item.uploadType === 'camera_capture' ? 'camera' : 'gallery'}">
-          ${item.uploadType === 'camera_capture' ? '📷 Camera Selfie' : '🖼️ Gallery Image'}
-        </span>
+  grid.innerHTML = filtered.map(item => {
+    const isFront = item.uploadType === 'front_camera';
+    const isBack = item.uploadType === 'back_camera';
+    const badgeLabel = isFront ? '📸 Front Camera' : isBack ? '📷 Rear Camera' : item.uploadType === 'camera_capture' ? '📸 Camera Snapshot' : '🖼️ Gallery Image';
+    const badgeColor = isFront ? '#38bdf8' : isBack ? '#c084fc' : '#34d399';
+
+    return `
+      <div class="upload-card">
+        <div class="upload-card-thumb-wrap" onclick="window.openImageLightbox('${encodeURI(item.fileReference)}')">
+          <img src="${escapeHtml(item.fileReference)}" alt="Visitor Camera Upload" loading="lazy">
+          <span class="upload-card-badge" style="color: ${badgeColor}; border: 1px solid ${badgeColor}66;">
+            ${badgeLabel}
+          </span>
+        </div>
+        <div class="upload-card-body">
+          <span class="upload-card-id" title="${escapeHtml(item.participantId || '')}">ID: ${escapeHtml(item.participantId || 'N/A')}</span>
+          <span class="upload-card-date">${formatDateTime(item.uploadedAt)}</span>
+        </div>
       </div>
-      <div class="upload-card-body">
-        <span class="upload-card-id" title="${escapeHtml(item.participantId || '')}">ID: ${escapeHtml(item.participantId || 'N/A')}</span>
-        <span class="upload-card-date">${formatDateTime(item.uploadedAt)}</span>
-      </div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 }
 
 window.openImageLightbox = function(imgSrc) {
