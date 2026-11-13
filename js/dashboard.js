@@ -57,25 +57,26 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 function checkAuthAndInit() {
+  const adminEmail = sessionStorage.getItem('spin_admin_email');
+  const adminSession = sessionStorage.getItem('spin_admin_session');
+
   if (auth && isFirebaseConfigured()) {
     onAuthStateChanged(auth, (user) => {
-      if (!user) {
+      if (!user && !adminSession) {
         window.location.href = 'login.html';
       } else {
         const userEmailEl = document.getElementById('admin-display-email');
-        if (userEmailEl) userEmailEl.innerText = user.email;
+        if (userEmailEl) userEmailEl.innerText = (user && user.email) || adminEmail || 'Administrator';
         loadAllDashboardData();
       }
     });
   } else {
     // Demo / fallback mode check
-    const demoSession = sessionStorage.getItem('spin_admin_session');
-    const demoEmail = sessionStorage.getItem('spin_admin_email') || 'admin@spinwin.local';
-    if (!demoSession) {
+    if (!adminSession) {
       window.location.href = 'login.html';
     } else {
       const userEmailEl = document.getElementById('admin-display-email');
-      if (userEmailEl) userEmailEl.innerText = `${demoEmail} (Demo Mode)`;
+      if (userEmailEl) userEmailEl.innerText = `${adminEmail || 'admin@spinwin.local'} (Demo Mode)`;
       loadAllDashboardData();
     }
   }

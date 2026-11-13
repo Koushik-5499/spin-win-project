@@ -91,6 +91,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
           const result = await signInWithPopup(auth, provider);
           console.log("Google Sign-In successful:", result.user.email);
+          sessionStorage.setItem('spin_admin_session', 'active');
           sessionStorage.setItem('spin_admin_email', result.user.email);
           window.location.href = 'dashboard.html';
         } else {
@@ -148,12 +149,14 @@ document.addEventListener('DOMContentLoaded', () => {
             // Create New Admin User
             const userCredential = await createUserWithEmailAndPassword(auth, email, password);
             console.log("Admin account created successfully:", userCredential.user.email);
+            sessionStorage.setItem('spin_admin_session', 'active');
             sessionStorage.setItem('spin_admin_email', userCredential.user.email);
             window.location.href = 'dashboard.html';
           } else {
             // Sign In Existing Admin
             const userCredential = await signInWithEmailAndPassword(auth, email, password);
             console.log("Admin logged in successfully:", userCredential.user.email);
+            sessionStorage.setItem('spin_admin_session', 'active');
             sessionStorage.setItem('spin_admin_email', userCredential.user.email);
             window.location.href = 'dashboard.html';
           }
@@ -197,15 +200,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function showError(msg) {
     if (!errorAlert) return;
-    errorAlert.innerText = msg;
-    errorAlert.style.display = 'block';
-  }
-
-  function hideError() {
-    if (!errorAlert) return;
-    errorAlert.style.display = 'none';
-  }
-});
     errorAlert.innerText = msg;
     errorAlert.style.display = 'block';
   }
