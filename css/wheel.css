@@ -1,0 +1,315 @@
+/* ==========================================================================
+   SPIN & WIN - PRIZE WHEEL STYLES
+   Custom Neon Bezel, Golden Pointer, Dynamic Lighting & Canvas Frame
+   ========================================================================== */
+
+.wheel-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin: 1.5rem 0 3rem;
+  position: relative;
+}
+
+/* Wheel Container Frame */
+.wheel-outer-wrapper {
+  position: relative;
+  width: min(92vw, 460px);
+  height: min(92vw, 460px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 2rem;
+  user-select: none;
+}
+
+/* Outer Glow Ring & Decorative LEDs */
+.wheel-bezel {
+  position: absolute;
+  inset: -14px;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    #FFD700 0deg,
+    #B5179E 90deg,
+    #00F5D4 180deg,
+    #FFD700 270deg,
+    #FFD700 360deg
+  );
+  padding: 6px;
+  box-shadow: 
+    0 0 35px rgba(255, 215, 0, 0.4),
+    0 0 70px rgba(181, 23, 158, 0.25),
+    inset 0 0 25px rgba(0, 0, 0, 0.8);
+  animation: bezelSpin 20s linear infinite;
+  z-index: 1;
+}
+
+@keyframes bezelSpin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.wheel-inner-bezel {
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 4px solid #140d30;
+  box-shadow: inset 0 0 15px rgba(0, 0, 0, 0.9);
+  z-index: 2;
+  pointer-events: none;
+}
+
+/* Canvas Wheel */
+#wheel-canvas {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  position: relative;
+  z-index: 3;
+  display: block;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7);
+  transition: transform 0.1s ease;
+  will-change: transform;
+}
+
+/* Top Pointer Indicator */
+.wheel-pointer {
+  position: absolute;
+  top: -18px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 44px;
+  height: 52px;
+  z-index: 10;
+  filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.75)) drop-shadow(0 0 12px rgba(255, 215, 0, 0.7));
+  transform-origin: top center;
+  transition: transform 0.08s ease-out;
+}
+
+.wheel-pointer svg {
+  width: 100%;
+  height: 100%;
+  fill: url(#pointerGoldGradient);
+}
+
+.wheel-pointer.tick {
+  animation: pointerTick 0.12s ease-out;
+}
+
+@keyframes pointerTick {
+  0% { transform: translateX(-50%) rotate(0deg); }
+  35% { transform: translateX(-50%) rotate(-18deg); }
+  100% { transform: translateX(-50%) rotate(0deg); }
+}
+
+/* Center Hub / Spin Button */
+.wheel-center-hub {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 86px;
+  height: 86px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #fff1a8 0%, #FFD700 50%, #A66C00 100%);
+  border: 4px solid #28154e;
+  box-shadow: 
+    0 0 20px rgba(255, 215, 0, 0.6),
+    0 8px 18px rgba(0, 0, 0, 0.6),
+    inset 0 2px 4px rgba(255, 255, 255, 0.8),
+    inset 0 -3px 6px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 8;
+  cursor: pointer;
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease;
+  user-select: none;
+}
+
+.wheel-center-hub:hover {
+  transform: translate(-50%, -50%) scale(1.08);
+  box-shadow: 
+    0 0 30px rgba(255, 215, 0, 0.9),
+    0 10px 24px rgba(0, 0, 0, 0.7);
+}
+
+.wheel-center-hub:active {
+  transform: translate(-50%, -50%) scale(0.96);
+}
+
+.hub-text {
+  font-size: 0.95rem;
+  font-weight: 900;
+  color: #1a082c;
+  letter-spacing: 1px;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.hub-sub {
+  font-size: 0.55rem;
+  font-weight: 800;
+  color: #573300;
+  letter-spacing: 0.5px;
+  margin-top: 2px;
+}
+
+/* Action Controls Below Wheel */
+.wheel-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+  width: 100%;
+  max-width: 440px;
+}
+
+.spin-btn-main {
+  width: 100%;
+  padding: 1.15rem 2rem;
+  font-size: 1.35rem;
+  font-weight: 900;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  border-radius: 50px;
+  background: linear-gradient(135deg, #FFF6BD 0%, #FFD700 40%, #FFA800 80%, #FF7B00 100%);
+  color: #120422;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 
+    0 0 25px rgba(255, 215, 0, 0.6),
+    0 10px 30px rgba(0, 0, 0, 0.4);
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+
+.spin-btn-main::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+  transform: skewX(-25deg);
+  animation: shineSweep 3.5s infinite;
+}
+
+@keyframes shineSweep {
+  0% { left: -100%; }
+  30% { left: 160%; }
+  100% { left: 160%; }
+}
+
+.spin-btn-main:hover:not(:disabled) {
+  transform: translateY(-3px) scale(1.02);
+  box-shadow: 
+    0 0 40px rgba(255, 215, 0, 0.8),
+    0 14px 35px rgba(0, 0, 0, 0.5);
+}
+
+.spin-btn-main:active:not(:disabled) {
+  transform: translateY(1px) scale(0.99);
+}
+
+.spin-btn-main:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  filter: grayscale(0.4);
+  box-shadow: none;
+}
+
+/* User Session Status Badge */
+.user-status-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: rgba(18, 12, 38, 0.6);
+  border: 1px solid rgba(255, 215, 0, 0.2);
+  border-radius: 14px;
+  padding: 0.75rem 1.25rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.status-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.status-value {
+  color: #fff;
+  font-weight: 700;
+  font-family: var(--font-mono);
+}
+
+/* Prominent Highlights Legend */
+.prizes-legend {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-top: 1.5rem;
+  max-width: 700px;
+}
+
+.legend-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 0.35rem 0.85rem;
+  border-radius: 30px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.legend-chip.jackpot {
+  background: rgba(255, 215, 0, 0.15);
+  border-color: var(--gold-primary);
+  color: var(--gold-light);
+  font-weight: 700;
+  box-shadow: 0 0 12px rgba(255, 215, 0, 0.25);
+}
+
+.legend-chip.high {
+  background: rgba(181, 23, 158, 0.15);
+  border-color: var(--neon-purple);
+  color: #f0abfc;
+  font-weight: 700;
+}
+
+/* Responsive Wheel Scaling */
+@media (max-width: 480px) {
+  .wheel-outer-wrapper {
+    width: 320px;
+    height: 320px;
+  }
+  .wheel-center-hub {
+    width: 68px;
+    height: 68px;
+  }
+  .hub-text {
+    font-size: 0.78rem;
+  }
+  .hub-sub {
+    font-size: 0.48rem;
+  }
+  .wheel-pointer {
+    width: 36px;
+    height: 44px;
+    top: -14px;
+  }
+  .spin-btn-main {
+    font-size: 1.15rem;
+    padding: 1rem 1.5rem;
+  }
+}

@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Executive Admin Dashboard | Spin &amp; Win Control Center</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/dashboard.css">
+</head>
+<body class="dashboard-body">
+
+  <div class="dashboard-container">
+    
+    <!-- Top Header -->
+    <header class="dash-header">
+      <div class="dash-title-group">
+        <h1>
+          <span>⚡ Spin &amp; Win Command Center</span>
+          <span class="admin-badge">Admin</span>
+        </h1>
+        <p class="dash-subtitle">Real-time promotional analytics, reward claims and consent auditing</p>
+      </div>
+
+      <div class="dash-user-controls">
+        <div class="live-indicator">
+          <span class="live-dot"></span>
+          <span>Live Firestore Sync</span>
+        </div>
+
+        <div class="admin-email-tag">
+          <span>👤</span>
+          <span id="admin-display-email">admin@domain.com</span>
+        </div>
+
+        <button class="btn btn-secondary" id="dash-refresh-btn" title="Refresh all records">
+          🔄 Refresh
+        </button>
+
+        <button class="btn btn-danger" id="dash-logout-btn">
+          Sign Out
+        </button>
+      </div>
+    </header>
+
+    <!-- Setup Guide Card (Shown if Firebase API Keys are not yet configured) -->
+    <div class="setup-guide-card" id="firebase-setup-guide">
+      <div class="setup-guide-header">
+        <span>⚡ Quick Firebase Connection Guide</span>
+      </div>
+      <p style="font-size:0.88rem; color:var(--text-muted); margin-bottom:0.75rem;">
+        Your application is currently running in <strong>Local Simulation Mode</strong>. You can test all features right now. When you're ready to connect to your live Firebase Cloud project:
+      </p>
+      <ol class="setup-steps-list">
+        <li>Open Firebase Console (<code>console.firebase.google.com</code>) and create a project.</li>
+        <li>Enable <strong>Firestore Database</strong> in production mode.</li>
+        <li>Enable <strong>Authentication</strong> with Email/Password sign-in and create an admin user.</li>
+        <li>Copy your web app configuration into <code>js/firebase-config.js</code>.</li>
+        <li>Deploy the Firestore security rules from <code>firestore.rules</code>.</li>
+      </ol>
+    </div>
+
+    <!-- Metric Statistics Grid (10 Required Statistics) -->
+    <section class="metrics-grid">
+      
+      <div class="metric-card gold-accent">
+        <div class="metric-header">
+          <span class="metric-title">Unique Spinners</span>
+          <div class="metric-icon">👥</div>
+        </div>
+        <div class="metric-value" id="metric-total-participants">0</div>
+        <div class="metric-sub">Visitors completed a spin</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-header">
+          <span class="metric-title">Total Spins</span>
+          <div class="metric-icon">🎰</div>
+        </div>
+        <div class="metric-value" id="metric-total-spins">0</div>
+        <div class="metric-sub">Lifetime wheel rotations</div>
+      </div>
+
+      <div class="metric-card gold-accent">
+        <div class="metric-header">
+          <span class="metric-title">₹10,000 Jackpots</span>
+          <div class="metric-icon">👑</div>
+        </div>
+        <div class="metric-value" id="metric-wins-10000" style="color:var(--gold-primary)">0</div>
+        <div class="metric-sub">Top-tier jackpot results</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-header">
+          <span class="metric-title">₹1,000 Winners</span>
+          <div class="metric-icon">✨</div>
+        </div>
+        <div class="metric-value" id="metric-wins-1000" style="color:#FFA800">0</div>
+        <div class="metric-sub">Gold tier prize spins</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-header">
+          <span class="metric-title">Total Claims</span>
+          <div class="metric-icon">📥</div>
+        </div>
+        <div class="metric-value" id="metric-total-claims">0</div>
+        <div class="metric-sub">Reward claims initiated</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-header">
+          <span class="metric-title">Pending Claims</span>
+          <div class="metric-icon">⏳</div>
+        </div>
+        <div class="metric-value" id="metric-pending-claims" style="color:#FBBF24">0</div>
+        <div class="metric-sub">Awaiting admin review</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-header">
+          <span class="metric-title">Submitted UPI IDs</span>
+          <div class="metric-icon">💳</div>
+        </div>
+        <div class="metric-value" id="metric-upi-ids" style="color:#00F5D4">0</div>
+        <div class="metric-sub">Verified claim addresses</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-header">
+          <span class="metric-title">Location Consents</span>
+          <div class="metric-icon">📍</div>
+        </div>
+        <div class="metric-value" id="metric-loc-consents">0</div>
+        <div class="metric-sub">Explicit location shares</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-header">
+          <span class="metric-title">Camera Consents</span>
+          <div class="metric-icon">📸</div>
+        </div>
+        <div class="metric-value" id="metric-cam-consents">0</div>
+        <div class="metric-sub">Winner selfies submitted</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-header">
+          <span class="metric-title">Gallery Uploads</span>
+          <div class="metric-icon">🖼️</div>
+        </div>
+        <div class="metric-value" id="metric-gallery-uploads">0</div>
+        <div class="metric-sub">Visitor-selected photos</div>
+      </div>
+
+    </section>
+
+    <!-- Prize Distribution Breakdown -->
+    <section class="prize-breakdown-card">
+      <div class="prize-breakdown-title">
+        <span>Prize Distribution Breakdown</span>
+        <span style="font-size:0.8rem; font-weight:normal; color:var(--text-dim);">All-time spin result frequency</span>
+      </div>
+      <div class="prize-chips-grid">
+        <div class="prize-chip-box jackpot">
+          <div class="prize-chip-label">⭐ ₹10,000</div>
+          <div class="prize-chip-count" id="prize-count-10000">0</div>
+        </div>
+        <div class="prize-chip-box special">
+          <div class="prize-chip-label">✨ ₹1,000</div>
+          <div class="prize-chip-count" id="prize-count-1000">0</div>
+        </div>
+        <div class="prize-chip-box">
+          <div class="prize-chip-label">₹5,000</div>
+          <div class="prize-chip-count" id="prize-count-5000">0</div>
+        </div>
+        <div class="prize-chip-box">
+          <div class="prize-chip-label">₹2,000</div>
+          <div class="prize-chip-count" id="prize-count-2000">0</div>
+        </div>
+        <div class="prize-chip-box">
+          <div class="prize-chip-label">₹500</div>
+          <div class="prize-chip-count" id="prize-count-500">0</div>
+        </div>
+        <div class="prize-chip-box">
+          <div class="prize-chip-label">₹200</div>
+          <div class="prize-chip-count" id="prize-count-200">0</div>
+        </div>
+        <div class="prize-chip-box">
+          <div class="prize-chip-label">₹100</div>
+          <div class="prize-chip-count" id="prize-count-100">0</div>
+        </div>
+        <div class="prize-chip-box">
+          <div class="prize-chip-label">₹50</div>
+          <div class="prize-chip-count" id="prize-count-50">0</div>
+        </div>
+        <div class="prize-chip-box">
+          <div class="prize-chip-label">₹10</div>
+          <div class="prize-chip-count" id="prize-count-10">0</div>
+        </div>
+        <div class="prize-chip-box">
+          <div class="prize-chip-label">Better Luck</div>
+          <div class="prize-chip-count" id="prize-count-BetterLuck">0</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Navigation Tabs -->
+    <nav class="dash-tabs">
+      <button class="dash-tab-btn active" data-tab="spins">
+        <span>🎰 Spin History</span>
+        <span class="tab-count" id="badge-tab-spins">0</span>
+      </button>
+      <button class="dash-tab-btn" data-tab="claims">
+        <span>💳 Reward Claims</span>
+        <span class="tab-count" id="badge-tab-claims">0</span>
+      </button>
+      <button class="dash-tab-btn" data-tab="locations">
+        <span>📍 Location Records</span>
+        <span class="tab-count" id="badge-tab-locations">0</span>
+      </button>
+      <button class="dash-tab-btn" data-tab="uploads">
+        <span>📷 Camera &amp; Gallery Uploads</span>
+        <span class="tab-count" id="badge-tab-uploads">0</span>
+      </button>
+      <button class="dash-tab-btn" data-tab="consents">
+        <span>🛡️ Consent History</span>
+        <span class="tab-count" id="badge-tab-consents">0</span>
+      </button>
+    </nav>
+
+    <!-- Global Toolbar & Filter Bar -->
+    <div class="dash-toolbar">
+      <div class="toolbar-search">
+        <span class="toolbar-search-icon">🔍</span>
+        <input type="text" id="dash-search-input" placeholder="Search by Spin ID, Participant ID, or UPI ID...">
+      </div>
+
+      <div class="toolbar-actions">
+        <select id="dash-prize-filter" class="filter-select">
+          <option value="ALL">All Prizes</option>
+          <option value="10,000">₹10,000 Jackpot</option>
+          <option value="1,000">₹1,000 Gold Tier</option>
+          <option value="5,000">₹5,000</option>
+          <option value="2,000">₹2,000</option>
+          <option value="500">₹500</option>
+          <option value="200">₹200</option>
+          <option value="100">₹100</option>
+          <option value="50">₹50</option>
+          <option value="10">₹10</option>
+          <option value="Better Luck">Better Luck Next Time</option>
+        </select>
+
+        <button class="btn btn-outline-gold" id="export-csv-btn">
+          📥 Export CSV
+        </button>
+      </div>
+    </div>
+
+    <!-- ===================================================================== -->
+    <!-- TAB VIEW 1: SPIN HISTORY                                              -->
+    <!-- ===================================================================== -->
+    <div class="tab-view-content" id="tab-view-spins" style="display: block;">
+      <div class="table-responsive">
+        <table class="dash-table">
+          <thead>
+            <tr>
+              <th>Spin Reference ID</th>
+              <th>Prize Amount</th>
+              <th>Date &amp; Time</th>
+              <th>Participant ID</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="spins-table-body">
+            <!-- Dynamically populated -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ===================================================================== -->
+    <!-- TAB VIEW 2: REWARD CLAIMS                                             -->
+    <!-- ===================================================================== -->
+    <div class="tab-view-content" id="tab-view-claims" style="display: none;">
+      <div class="table-responsive">
+        <table class="dash-table">
+          <thead>
+            <tr>
+              <th>Claim ID</th>
+              <th>Spin ID</th>
+              <th>Submitted UPI ID</th>
+              <th>Claim Status</th>
+              <th>Submitted Date</th>
+              <th>Admin Action</th>
+            </tr>
+          </thead>
+          <tbody id="claims-table-body">
+            <!-- Dynamically populated -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ===================================================================== -->
+    <!-- TAB VIEW 3: LOCATION RECORDS                                          -->
+    <!-- ===================================================================== -->
+    <div class="tab-view-content" id="tab-view-locations" style="display: none;">
+      <div class="table-responsive">
+        <table class="dash-table">
+          <thead>
+            <tr>
+              <th>Participant ID</th>
+              <th>GPS Coordinates (Latitude, Longitude)</th>
+              <th>Date &amp; Time</th>
+              <th>Map Link</th>
+            </tr>
+          </thead>
+          <tbody id="locations-table-body">
+            <!-- Dynamically populated -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ===================================================================== -->
+    <!-- TAB VIEW 4: CAMERA & GALLERY UPLOADS                                  -->
+    <!-- ===================================================================== -->
+    <div class="tab-view-content" id="tab-view-uploads" style="display: none;">
+      <div class="upload-grid" id="uploads-grid-container">
+        <!-- Dynamically populated image cards -->
+      </div>
+    </div>
+
+    <!-- ===================================================================== -->
+    <!-- TAB VIEW 5: CONSENT AUDIT HISTORY                                     -->
+    <!-- ===================================================================== -->
+    <div class="tab-view-content" id="tab-view-consents" style="display: none;">
+      <div class="table-responsive">
+        <table class="dash-table">
+          <thead>
+            <tr>
+              <th>Participant ID</th>
+              <th>Location Consent</th>
+              <th>Camera Consent</th>
+              <th>Gallery Consent</th>
+              <th>Consent Action</th>
+              <th>Timestamp</th>
+            </tr>
+          </thead>
+          <tbody id="consents-table-body">
+            <!-- Dynamically populated -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Image Lightbox Modal -->
+  <div class="modal-overlay" id="image-lightbox-modal">
+    <div class="modal-card" style="max-width: 720px; text-align: center;">
+      <div class="modal-header">
+        <h3 class="modal-title" style="font-size:1.3rem">Visitor Upload Preview</h3>
+      </div>
+      <div class="image-preview-modal-body">
+        <img id="lightbox-img" class="image-preview-modal-img" src="" alt="High resolution upload preview">
+      </div>
+      <div style="margin-top: 1.25rem;">
+        <button class="btn btn-secondary" onclick="window.closeImageLightbox();">
+          Close Preview
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="js/dashboard.js"></script>
+</body>
+</html>

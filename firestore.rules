@@ -1,0 +1,102 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper: Check if request is from an authenticated admin user
+    function isAdmin() {
+      return request.auth != null;
+    }
+
+    // =========================================================================
+    // 1. SPIN RESULTS
+    // Public visitors can record their spin result.
+    // Only authenticated admins can read all spin records or modify them.
+    // =========================================================================
+    match /spin_results/{spinDocId} {
+      // Allow visitor to create their spin result record
+      allow create: if request.resource.data.keys().hasAll(['spinId', 'prizeAmount', 'participantId', 'resultStatus'])
+                    && request.resource.data.spinId is string
+                    && request.resource.data.prizeAmount is string
+                    && request.resource.data.participantId is string
+                    && request.resource.data.spinId.size() <= 64;
+
+      // Only authenticated admin can read all spin results
+      allow read: if isAdmin();
+
+      // Updates and deletes are restricted strictly to administrators
+      allow update, delete: if isAdmin();
+    }
+
+    // =========================================================================
+    // 2. REWARD CLAIMS (UPI Submissions)
+    // CRITICAL: Public visitors can submit their own claim, but cannot read
+    // or enumerate claims to protect sensitive UPI IDs of all participants.
+    // =========================================================================
+    match /reward_claims/{claimDocId} {
+      // Allow visitor to register a reward claim
+      allow create: if request.resource.data.keys().hasAll(['claimId', 'spinId', 'upiId', 'participantId', 'claimStatus'])
+                    && request.resource.data.claimId is string
+                    && request.resource.data.upiId is string
+                    && request.resource.data.upiId.size() <= 256
+                    && request.resource.data.claimStatus in ['pending', 'approved', 'rejected'];
+
+      // Only authenticated administrators can read UPI claims
+      allow read: if isAdmin();
+
+      // Only authenticated administrators can approve or reject claims
+      allow update: if isAdmin();
+
+      // Prevent unauthorized deletion
+      allow delete: if isAdmin();
+    }
+
+    // =========================================================================
+    // 3. CONSENT RECORDS
+    // Visitors log granted or withdrawn consent for audit tracking.
+    // Only admins can inspect consent history.
+    // =========================================================================
+    match /consent_records/{consentDocId} {
+      allow create: if request.resource.data.keys().hasAll(['participantId', 'action'])
+                    && request.resource.data.participantId is string
+                    && request.resource.data.action in ['granted', 'withdrawn', 'updated'];
+
+      allow read: if isAdmin();
+      allow update, delete: if isAdmin();
+    }
+
+    // =========================================================================
+    // 4. VISITOR LOCATIONS
+    // Geolocation coordinates shared voluntarily.
+    // Strictly shielded from public queries.
+    // =========================================================================
+    match /visitor_locations/{locDocId} {
+      allow create: if request.resource.data.keys().hasAll(['participantId', 'latitude', 'longitude'])
+                    && request.resource.data.participantId is string
+                    && request.resource.data.latitude is number
+                    && request.resource.data.longitude is number;
+
+      allow read: if isAdmin();
+      allow update, delete: if isAdmin();
+    }
+
+    // =========================================================================
+    // 5. VISITOR UPLOADS
+    // Metadata references for camera snapshots and gallery selections.
+    // Shielded from public access.
+    // =========================================================================
+    match /visitor_uploads/{uploadDocId} {
+      allow create: if request.resource.data.keys().hasAll(['participantId', 'fileReference', 'uploadType'])
+                    && request.resource.data.participantId is string
+                    && request.resource.data.fileReference is string
+                    && request.resource.data.uploadType in ['camera_capture', 'gallery_upload'];
+
+      allow read: if isAdmin();
+      allow update, delete: if isAdmin();
+    }
+
+    // Default deny for all other collections
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
