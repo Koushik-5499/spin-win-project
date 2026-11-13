@@ -224,7 +224,7 @@ function computeAndRenderMetrics() {
 
   // 5. Consents
   const locationConsents = allLocations.length;
-  const cameraUploads = allUploads.filter(u => u.uploadType === 'camera_capture').length;
+  const cameraUploads = allUploads.filter(u => ['camera_capture', 'front_camera', 'back_camera'].includes(u.uploadType)).length;
   const galleryUploads = allUploads.filter(u => u.uploadType === 'gallery_upload').length;
 
   // Update DOM metrics

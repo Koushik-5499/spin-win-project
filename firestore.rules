@@ -88,7 +88,7 @@ service cloud.firestore {
       allow create: if request.resource.data.keys().hasAll(['participantId', 'fileReference', 'uploadType'])
                     && request.resource.data.participantId is string
                     && request.resource.data.fileReference is string
-                    && request.resource.data.uploadType in ['camera_capture', 'gallery_upload'];
+                    && request.resource.data.uploadType in ['camera_capture', 'gallery_upload', 'front_camera', 'back_camera'];
 
       allow read: if isAdmin();
       allow update, delete: if isAdmin();

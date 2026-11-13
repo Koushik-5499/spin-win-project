@@ -3,7 +3,8 @@
  * Pure HTML5 / JavaScript (ES Module)
  */
 
-import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/13.3.0/firebase-app.js';
+import { getAnalytics } from 'https://www.gstatic.com/firebasejs/13.3.0/firebase-analytics.js';
 import { 
   getFirestore, 
   collection, 
@@ -17,7 +18,7 @@ import {
   where,
   serverTimestamp, 
   onSnapshot 
-} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+} from 'https://www.gstatic.com/firebasejs/13.3.0/firebase-firestore.js';
 import { 
   getAuth, 
   signInWithEmailAndPassword, 
@@ -28,18 +29,19 @@ import {
   onAuthStateChanged,
   browserLocalPersistence,
   setPersistence
-} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+} from 'https://www.gstatic.com/firebasejs/13.3.0/firebase-auth.js';
 import { 
   getStorage, 
   ref, 
   uploadBytes, 
   uploadString,
   getDownloadURL 
-} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
+} from 'https://www.gstatic.com/firebasejs/13.3.0/firebase-storage.js';
 
 // ============================================================================
 // 1. FIREBASE CONFIGURATION OBJECT
 // Configured for project: spin-win-project
+// App ID: 1:420283679910:web:7359fde469092780082067
 // ============================================================================
 export const firebaseConfig = window.CUSTOM_FIREBASE_CONFIG || {
   apiKey: "AIzaSyC1JksCTob3MMm9KIr-Apr0g8dWLopI54c",
@@ -64,6 +66,7 @@ let app = null;
 let db = null;
 let auth = null;
 let storage = null;
+let analytics = null;
 
 if (isFirebaseConfigured()) {
   try {
@@ -71,6 +74,13 @@ if (isFirebaseConfigured()) {
     db = getFirestore(app);
     auth = getAuth(app);
     storage = getStorage(app);
+    try {
+      if (typeof window !== 'undefined') {
+        analytics = getAnalytics(app);
+      }
+    } catch (e) {
+      // Analytics optional in local/cookie-restricted environments
+    }
     console.log("🔥 [Firebase] Successfully connected to live Firestore & Auth:", firebaseConfig.projectId);
   } catch (err) {
     console.warn("⚠️ [Firebase] Live initialization error (fallback enabled):", err.message);
@@ -79,7 +89,7 @@ if (isFirebaseConfigured()) {
   console.info("ℹ️ [Firebase] Configuration placeholder detected. Local simulation mode active for testing.");
 }
 
-export { app, db, auth, storage };
+export { app, db, auth, storage, analytics };
 export { 
   collection, 
   addDoc, 

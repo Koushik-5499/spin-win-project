@@ -1,0 +1,19 @@
+{
+  "auth": {
+    "providers": {
+      "emailPassword": true,
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "Spin & Win",
+        "supportEmail": "koushik02075499@gmail.com",
+        "authorizedRedirectUris": [
+          "https://spin-win-project.firebaseapp.com/__/auth/handler",
+          "http://localhost",
+          "https://spin-win-project.vercel.app"
+        ]
+      }
+    }
+  },
+  "firestore": {
+    "rules": "firestore.rules"
+  }
+}

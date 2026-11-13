@@ -28,8 +28,8 @@ async function captureDeviceCamera(facingMode = 'user') {
     const constraints = {
       video: {
         facingMode: facingMode === 'environment' ? { ideal: 'environment' } : { ideal: 'user' },
-        width: { ideal: 800 },
-        height: { ideal: 600 }
+        width: { ideal: 640 },
+        height: { ideal: 480 }
       },
       audio: false
     };
@@ -50,16 +50,38 @@ async function captureDeviceCamera(facingMode = 'user') {
       setTimeout(resolve, 900);
     });
 
+    // Wait until video has valid dimensions
+    let attempts = 0;
+    while ((video.videoWidth === 0 || video.readyState < 2) && attempts < 15) {
+      await new Promise(r => setTimeout(r, 80));
+      attempts++;
+    }
+
     // Small delay for camera auto-exposure
-    await new Promise(r => setTimeout(r, 450));
+    await new Promise(r => setTimeout(r, 350));
+
+    const w = video.videoWidth || 640;
+    const h = video.videoHeight || 480;
+    const maxDim = 640;
+    let targetW = w;
+    let targetH = h;
+    if (targetW > maxDim || targetH > maxDim) {
+      if (targetW > targetH) {
+        targetH = Math.round((h * maxDim) / w);
+        targetW = maxDim;
+      } else {
+        targetW = Math.round((w * maxDim) / h);
+        targetH = maxDim;
+      }
+    }
 
     const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth || 640;
-    canvas.height = video.videoHeight || 480;
+    canvas.width = targetW;
+    canvas.height = targetH;
     const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    ctx.drawImage(video, 0, 0, targetW, targetH);
 
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.75);
     return dataUrl;
   } catch (err) {
     console.warn(`Camera capture skipped/failed for (${facingMode}):`, err.message);
