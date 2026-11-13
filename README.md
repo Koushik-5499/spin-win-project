@@ -80,12 +80,13 @@ Follow these steps to connect your live Firebase backend:
 
 ```javascript
 export const firebaseConfig = {
-  apiKey: "AIzaSyYOUR_REAL_API_KEY",
-  authDomain: "your-project-id.firebaseapp.com",
-  projectId: "your-project-id",
-  storageBucket: "your-project-id.appspot.com",
-  messagingSenderId: "123456789012",
-  appId: "1:123456789012:web:abcdef1234567890"
+  apiKey: "AIzaSyC1JksCTob3MMm9KIr-Apr0g8dWLopI54c",
+  authDomain: "spin-win-project.firebaseapp.com",
+  projectId: "spin-win-project",
+  storageBucket: "spin-win-project.firebasestorage.app",
+  messagingSenderId: "420283679910",
+  appId: "1:420283679910:web:7359fde469092780082067",
+  measurementId: "G-CB34DD16N0"
 };
 ```
 
