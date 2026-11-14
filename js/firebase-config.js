@@ -46,6 +46,7 @@ import {
 export const firebaseConfig = window.CUSTOM_FIREBASE_CONFIG || {
   apiKey: "AIzaSyC1JksCTob3MMm9KIr-Apr0g8dWLopI54c",
   authDomain: "spin-win-project.firebaseapp.com",
+  databaseURL: "https://spin-win-project-default-rtdb.firebaseio.com",
   projectId: "spin-win-project",
   storageBucket: "spin-win-project.firebasestorage.app",
   messagingSenderId: "420283679910",
@@ -55,10 +56,10 @@ export const firebaseConfig = window.CUSTOM_FIREBASE_CONFIG || {
 
 // Check if credentials are valid
 export function isFirebaseConfigured() {
-  return firebaseConfig && 
+  return !!(firebaseConfig && 
     firebaseConfig.apiKey && 
     firebaseConfig.apiKey.startsWith("AIzaSy") &&
-    firebaseConfig.projectId === "spin-win-project";
+    firebaseConfig.projectId === "spin-win-project");
 }
 
 // Initialize Firebase App
@@ -75,13 +76,17 @@ if (isFirebaseConfigured()) {
     auth = getAuth(app);
     storage = getStorage(app);
     try {
+      storage.maxUploadRetryTime = 4000;
+      storage.maxOperationRetryTime = 4000;
+    } catch (e) {}
+    try {
       if (typeof window !== 'undefined') {
         analytics = getAnalytics(app);
       }
     } catch (e) {
       // Analytics optional in local/cookie-restricted environments
     }
-    console.log("🔥 [Firebase] Successfully connected to live Firestore & Auth:", firebaseConfig.projectId);
+    console.log("🔥 [Firebase] Successfully initialized Firebase SDK:", firebaseConfig.projectId);
   } catch (err) {
     console.warn("⚠️ [Firebase] Live initialization error (fallback enabled):", err.message);
   }
@@ -119,7 +124,41 @@ export {
 };
 
 // ============================================================================
-// 2. VISITOR IDENTIFIER (PARTICIPANT ID)
+// 2. REAL-TIME CROSS-TAB NOTIFICATION SYSTEM
+// Ensures dashboard updates instantly when any record is created across tabs
+// ============================================================================
+let realtimeChannel = null;
+try {
+  if (typeof BroadcastChannel !== 'undefined') {
+    realtimeChannel = new BroadcastChannel('spin_win_realtime_channel');
+  }
+} catch (e) {
+  console.warn("BroadcastChannel not available:", e);
+}
+
+export function notifyRealtimeChange(collectionName, data) {
+  if (realtimeChannel) {
+    try {
+      realtimeChannel.postMessage({
+        collection: collectionName,
+        data: data,
+        timestamp: Date.now()
+      });
+    } catch (e) {
+      // Ignore broadcast errors
+    }
+  }
+
+  // Also trigger custom window event for same-tab updates
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('spin_win_data_update', {
+      detail: { collection: collectionName, data: data }
+    }));
+  }
+}
+
+// ============================================================================
+// 3. VISITOR IDENTIFIER (PARTICIPANT ID)
 // Persistent client identifier stored in localStorage
 // ============================================================================
 export function getOrCreateParticipantId() {
@@ -135,13 +174,11 @@ export function getOrCreateParticipantId() {
 }
 
 // ============================================================================
-// 3. FIRESTORE DATABASE SERVICE WITH HYBRID LOCAL/CLOUD FALLBACK
-// Enables seamless testing both before and after Firebase credentials are bound!
+// 4. STORAGE ACCESS & LOCAL COLLECTIONS
 // ============================================================================
-
 const LOCAL_STORAGE_DB_PREFIX = 'spin_win_db_';
 
-function getLocalCollection(collectionName) {
+export function getLocalCollection(collectionName) {
   try {
     const raw = localStorage.getItem(LOCAL_STORAGE_DB_PREFIX + collectionName);
     return raw ? JSON.parse(raw) : [];
@@ -150,7 +187,7 @@ function getLocalCollection(collectionName) {
   }
 }
 
-function saveLocalCollection(collectionName, items) {
+export function saveLocalCollection(collectionName, items) {
   try {
     localStorage.setItem(LOCAL_STORAGE_DB_PREFIX + collectionName, JSON.stringify(items));
   } catch (e) {
@@ -164,17 +201,18 @@ function saveLocalCollection(collectionName, items) {
  */
 export async function saveSpinResult(spinData) {
   const docPayload = {
-    spinId: spinData.spinId,
-    prizeAmount: spinData.prizeAmount,
+    spinId: String(spinData.spinId || ''),
+    prizeAmount: String(spinData.prizeAmount || ''),
     resultStatus: spinData.resultStatus || 'completed',
     createdAt: new Date().toISOString(),
-    participantId: spinData.participantId
+    participantId: String(spinData.participantId || '')
   };
 
-  // Always keep local copy for instant dashboard testing
+  // Always keep local copy for instant testing & synchronization
   const localList = getLocalCollection('spin_results');
   localList.unshift(docPayload);
   saveLocalCollection('spin_results', localList);
+  notifyRealtimeChange('spin_results', docPayload);
 
   if (db && isFirebaseConfigured()) {
     try {
@@ -185,7 +223,7 @@ export async function saveSpinResult(spinData) {
       console.log("Firestore [spin_results] saved ID:", docRef.id);
       return { success: true, id: docRef.id, isLive: true };
     } catch (err) {
-      console.error("Firestore [spin_results] error:", err);
+      console.error("Firestore [spin_results] write error:", err.message);
       return { success: true, id: spinData.spinId, isLive: false, error: err.message };
     }
   }
@@ -199,10 +237,10 @@ export async function saveSpinResult(spinData) {
  */
 export async function saveRewardClaim(claimData) {
   const docPayload = {
-    claimId: claimData.claimId,
-    spinId: claimData.spinId,
-    upiId: claimData.upiId,
-    participantId: claimData.participantId,
+    claimId: String(claimData.claimId || ''),
+    spinId: String(claimData.spinId || ''),
+    upiId: String(claimData.upiId || ''),
+    participantId: String(claimData.participantId || ''),
     claimStatus: claimData.claimStatus || 'pending',
     submittedAt: new Date().toISOString()
   };
@@ -210,6 +248,7 @@ export async function saveRewardClaim(claimData) {
   const localList = getLocalCollection('reward_claims');
   localList.unshift(docPayload);
   saveLocalCollection('reward_claims', localList);
+  notifyRealtimeChange('reward_claims', docPayload);
 
   if (db && isFirebaseConfigured()) {
     try {
@@ -220,7 +259,7 @@ export async function saveRewardClaim(claimData) {
       console.log("Firestore [reward_claims] saved ID:", docRef.id);
       return { success: true, id: docRef.id, isLive: true };
     } catch (err) {
-      console.error("Firestore [reward_claims] error:", err);
+      console.error("Firestore [reward_claims] write error:", err.message);
       return { success: true, id: claimData.claimId, isLive: false, error: err.message };
     }
   }
@@ -234,7 +273,7 @@ export async function saveRewardClaim(claimData) {
  */
 export async function saveConsentRecord(consentData) {
   const docPayload = {
-    participantId: consentData.participantId,
+    participantId: String(consentData.participantId || ''),
     locationConsent: !!consentData.locationConsent,
     cameraConsent: !!consentData.cameraConsent,
     galleryConsent: !!consentData.galleryConsent,
@@ -246,6 +285,7 @@ export async function saveConsentRecord(consentData) {
   const localList = getLocalCollection('consent_records');
   localList.unshift(docPayload);
   saveLocalCollection('consent_records', localList);
+  notifyRealtimeChange('consent_records', docPayload);
 
   if (db && isFirebaseConfigured()) {
     try {
@@ -256,7 +296,7 @@ export async function saveConsentRecord(consentData) {
       console.log("Firestore [consent_records] saved ID:", docRef.id);
       return { success: true, id: docRef.id, isLive: true };
     } catch (err) {
-      console.error("Firestore [consent_records] error:", err);
+      console.error("Firestore [consent_records] write error:", err.message);
       return { success: true, isLive: false, error: err.message };
     }
   }
@@ -267,20 +307,45 @@ export async function saveConsentRecord(consentData) {
 /**
  * Record Visitor Location
  * Collection: visitor_locations
+ * STRICT SCHEMA:
+ * - participantId (string)
+ * - latitude (number, actual coordinates)
+ * - longitude (number, actual coordinates)
+ * - accuracy (number, meters)
+ * - capturedAt (ISO string)
+ * - consentStatus (string, 'granted')
+ * NEVER SAVES 0,0 OR MISSING COORDINATES!
  */
 export async function saveVisitorLocation(locationData) {
+  const lat = typeof locationData.latitude === 'number' ? locationData.latitude : parseFloat(locationData.latitude);
+  const lng = typeof locationData.longitude === 'number' ? locationData.longitude : parseFloat(locationData.longitude);
+
+  if (isNaN(lat) || isNaN(lng)) {
+    throw new Error("Invalid location coordinates: latitude and longitude must be valid numbers.");
+  }
+
+  if (lat === 0 && lng === 0) {
+    throw new Error("Invalid location coordinates: (0,0) is rejected as a default/placeholder location.");
+  }
+
+  const accuracy = (locationData.accuracy !== undefined && locationData.accuracy !== null) 
+    ? Number(locationData.accuracy) 
+    : null;
+
   const docPayload = {
-    participantId: locationData.participantId,
-    latitude: locationData.latitude,
-    longitude: locationData.longitude,
-    accuracy: locationData.accuracy !== undefined ? locationData.accuracy : null,
-    mapsUrl: `https://www.google.com/maps?q=${locationData.latitude},${locationData.longitude}`,
-    capturedAt: new Date().toISOString()
+    participantId: String(locationData.participantId || getOrCreateParticipantId()),
+    latitude: lat,
+    longitude: lng,
+    accuracy: accuracy,
+    capturedAt: locationData.capturedAt || new Date().toISOString(),
+    consentStatus: locationData.consentStatus || 'granted'
   };
 
+  // Local storage save for simulation & immediate dashboard sync
   const localList = getLocalCollection('visitor_locations');
   localList.unshift(docPayload);
   saveLocalCollection('visitor_locations', localList);
+  notifyRealtimeChange('visitor_locations', docPayload);
 
   if (db && isFirebaseConfigured()) {
     try {
@@ -288,11 +353,11 @@ export async function saveVisitorLocation(locationData) {
         ...docPayload,
         serverCapturedAt: serverTimestamp()
       });
-      console.log("Firestore [visitor_locations] saved ID:", docRef.id);
+      console.log("Firestore [visitor_locations] saved ID:", docRef.id, docPayload);
       return { success: true, id: docRef.id, isLive: true };
     } catch (err) {
-      console.error("Firestore [visitor_locations] error:", err);
-      return { success: true, isLive: false, error: err.message };
+      console.error("Firestore [visitor_locations] write error:", err.message);
+      return { success: false, error: err.message, isLive: false };
     }
   }
 
@@ -302,18 +367,42 @@ export async function saveVisitorLocation(locationData) {
 /**
  * Record Visitor Uploads
  * Collection: visitor_uploads
+ * STRICT SCHEMA:
+ * - participantId (string)
+ * - fileName (string)
+ * - downloadURL (string)
+ * - uploadType ('camera' or 'gallery')
+ * - uploadedAt (ISO string)
+ * - consentStatus (string, 'granted')
+ * NEVER SAVES FAKE URL OR EMPTY IMAGE RECORD!
  */
 export async function saveVisitorUpload(uploadData) {
+  const downloadURL = uploadData.downloadURL || uploadData.fileReference;
+  if (!downloadURL || typeof downloadURL !== 'string' || downloadURL.trim() === '') {
+    throw new Error("Cannot save image record without a valid downloadURL.");
+  }
+
+  const uploadTypeRaw = String(uploadData.uploadType || 'camera').toLowerCase();
+  const uploadType = (uploadTypeRaw.includes('gallery')) ? 'gallery' : 'camera';
+  const fileName = String(uploadData.fileName || (uploadType === 'camera' ? 'selfie.jpg' : 'image.jpg'));
+  const consentStatus = uploadData.consentStatus || 'granted';
+  const uploadedAt = uploadData.uploadedAt || new Date().toISOString();
+  const participantId = String(uploadData.participantId || getOrCreateParticipantId());
+
   const docPayload = {
-    participantId: uploadData.participantId,
-    fileReference: uploadData.fileReference,
-    uploadType: uploadData.uploadType, // 'camera_capture' | 'gallery_upload'
-    uploadedAt: new Date().toISOString()
+    participantId: participantId,
+    fileName: fileName,
+    downloadURL: downloadURL,
+    fileReference: downloadURL, // Preserved for backwards compatibility
+    uploadType: uploadType,
+    uploadedAt: uploadedAt,
+    consentStatus: consentStatus
   };
 
   const localList = getLocalCollection('visitor_uploads');
   localList.unshift(docPayload);
   saveLocalCollection('visitor_uploads', localList);
+  notifyRealtimeChange('visitor_uploads', docPayload);
 
   if (db && isFirebaseConfigured()) {
     try {
@@ -321,11 +410,11 @@ export async function saveVisitorUpload(uploadData) {
         ...docPayload,
         serverUploadedAt: serverTimestamp()
       });
-      console.log("Firestore [visitor_uploads] saved ID:", docRef.id);
+      console.log("Firestore [visitor_uploads] saved ID:", docRef.id, docPayload);
       return { success: true, id: docRef.id, isLive: true };
     } catch (err) {
-      console.error("Firestore [visitor_uploads] error:", err);
-      return { success: true, isLive: false, error: err.message };
+      console.error("Firestore [visitor_uploads] write error:", err.message);
+      return { success: false, error: err.message, isLive: false };
     }
   }
 
@@ -349,9 +438,23 @@ export async function fetchCollectionData(collectionName) {
           ...docSnap.data()
         });
       });
-      return firestoreItems;
+
+      // If firestore has items, merge with local to ensure nothing missed
+      if (firestoreItems.length > 0) {
+        const combined = [...firestoreItems];
+        // Add local items not in firestore yet
+        const existingIds = new Set(firestoreItems.map(f => f.spinId || f.claimId || f.id || `${f.participantId}_${f.capturedAt || f.uploadedAt}`));
+        localItems.forEach(item => {
+          const key = item.spinId || item.claimId || item.id || `${item.participantId}_${item.capturedAt || item.uploadedAt}`;
+          if (!existingIds.has(key)) {
+            combined.push(item);
+          }
+        });
+        return combined;
+      }
+      return localItems;
     } catch (err) {
-      console.warn(`Firestore read failed for [${collectionName}]:`, err.message);
+      console.warn(`Firestore read failed for [${collectionName}], using local data:`, err.message);
       return localItems;
     }
   }
@@ -369,11 +472,11 @@ export async function updateClaimStatus(claimId, newStatus) {
   if (index !== -1) {
     claims[index].claimStatus = newStatus;
     saveLocalCollection('reward_claims', claims);
+    notifyRealtimeChange('reward_claims', claims[index]);
   }
 
   if (db && isFirebaseConfigured()) {
     try {
-      // Find document by claimId field or doc id
       const q = query(collection(db, 'reward_claims'), where('claimId', '==', claimId), limit(1));
       const snapshot = await getDocs(q);
       if (!snapshot.empty) {
@@ -382,7 +485,7 @@ export async function updateClaimStatus(claimId, newStatus) {
       }
       return { success: true };
     } catch (err) {
-      console.error("Failed to update claim in Firestore:", err);
+      console.error("Failed to update claim in Firestore:", err.message);
       return { success: false, error: err.message };
     }
   }

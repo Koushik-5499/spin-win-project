@@ -2,16 +2,19 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
     
-    // Only authenticated admin can list all visitor uploads
-    // Public visitors can only upload images up to 5MB to their own participant folder
+    // Visitor image uploads folder
     match /visitor_uploads/{participantId}/{fileName} {
+      // Allow visitor upload if file is under 5MB and has valid image MIME type
       allow write: if request.resource.size < 5 * 1024 * 1024
                    && request.resource.contentType.matches('image/.*');
       
-      // Admin can read all; public cannot enumerate all buckets
-      allow read: if request.auth != null;
+      // Allow public get so getDownloadURL resolves for the confirmed image,
+      // while restricting bucket/directory listing to authenticated admins only.
+      allow get: if true;
+      allow list: if request.auth != null;
     }
 
+    // Default: Authenticated admin only
     match /{allPaths=**} {
       allow read, write: if request.auth != null;
     }

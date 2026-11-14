@@ -1,13 +1,13 @@
 /**
- * Media Upload Services (Firebase Storage + Client-Side Optimization)
- * Handles Camera Snapshot & Gallery File Verification
+ * Media Upload Services (Firebase Storage + Client-Side Validation)
+ * Uploads Camera Snapshots & Gallery Images to Firebase Storage
+ * Saves verified downloadURL and metadata to Cloud Firestore visitor_uploads
  */
 
 import { 
   storage, 
   ref, 
   uploadBytes, 
-  uploadString, 
   getDownloadURL, 
   saveVisitorUpload, 
   isFirebaseConfigured, 
@@ -15,130 +15,223 @@ import {
 } from './firebase-config.js';
 
 const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB Limit
-const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 
 /**
- * Resize and compress an image file or dataURL using HTML5 canvas
+ * Convert a base64 DataURL to a binary Blob
  */
-export async function optimizeImage(source, maxWidth = 1200, quality = 0.82) {
+export async function dataUrlToBlob(dataUrl) {
+  const res = await fetch(dataUrl);
+  return await res.blob();
+}
+
+/**
+ * Convert a File object to DataURL for client preview
+ */
+export function fileToDataUrl(file) {
   return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      let width = img.width;
-      let height = img.height;
-
-      if (width > maxWidth) {
-        height = Math.round((height * maxWidth) / width);
-        width = maxWidth;
-      }
-
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, width, height);
-
-      const optimizedDataUrl = canvas.toDataURL('image/jpeg', quality);
-      resolve(optimizedDataUrl);
-    };
-    img.onerror = (e) => reject(new Error("Image processing failed: " + e.message));
-
-    if (typeof source === 'string') {
-      img.src = source;
-    } else if (source instanceof Blob || source instanceof File) {
-      const reader = new FileReader();
-      reader.onload = (e) => { img.src = e.target.result; };
-      reader.onerror = reject;
-      reader.readAsDataURL(source);
-    } else {
-      reject(new Error("Invalid source format"));
-    }
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = (e) => reject(new Error("File read error: " + e.message));
+    reader.readAsDataURL(file);
   });
 }
 
 /**
- * Upload a captured camera snapshot to Firebase Storage (or local storage fallback)
+ * Upload a captured camera photo to Firebase Storage
+ * When confirmed:
+ * 1. Upload the actual image file.
+ * 2. Wait for upload completion.
+ * 3. Retrieve its download URL.
+ * 4. Save URL and metadata in Firestore visitor_uploads.
+ * 5. Display upload success or failure.
  */
 export async function uploadCameraCapture(dataUrl) {
-  const participantId = getOrCreateParticipantId();
-  const timestamp = Date.now();
-  const filename = `selfie_${participantId}_${timestamp}.jpg`;
-  const storagePath = `visitor_uploads/${participantId}/${filename}`;
-
-  // Compress image
-  const compressedDataUrl = await optimizeImage(dataUrl, 1000, 0.85);
-
-  let downloadUrl = compressedDataUrl;
-
-  // Upload to Firebase Storage if available
-  if (storage && isFirebaseConfigured()) {
-    try {
-      const fileRef = ref(storage, storagePath);
-      // Upload DataURL as base64 string
-      const uploadResult = await uploadString(fileRef, compressedDataUrl, 'data_url', {
-        contentType: 'image/jpeg'
-      });
-      downloadUrl = await getDownloadURL(uploadResult.ref);
-      console.log("Uploaded camera capture to Firebase Storage:", downloadUrl);
-    } catch (err) {
-      console.warn("Storage upload failed, using optimized base64 reference:", err.message);
-      downloadUrl = compressedDataUrl;
-    }
+  if (!dataUrl) {
+    throw new Error("No camera capture data found to upload.");
   }
 
-  // Save reference in Firestore visitor_uploads
-  await saveVisitorUpload({
+  const participantId = getOrCreateParticipantId();
+  const timestamp = Date.now();
+  const fileName = `selfie_${participantId}_${timestamp}.jpg`;
+  const storagePath = `visitor_uploads/${participantId}/${fileName}`;
+
+  // Convert to actual image file Blob
+  const imageBlob = await dataUrlToBlob(dataUrl);
+
+  let downloadURL = null;
+  let isCloudUpload = false;
+
+  if (storage && isFirebaseConfigured()) {
+    try {
+      console.log(`🚀 [Firebase Storage] Uploading camera image to ${storagePath}...`);
+      const fileRef = ref(storage, storagePath);
+      
+      // Upload the actual binary image blob
+      const uploadResult = await uploadBytes(fileRef, imageBlob, {
+        contentType: 'image/jpeg',
+        customMetadata: {
+          participantId: participantId,
+          uploadType: 'camera',
+          capturedAt: new Date().toISOString()
+        }
+      });
+
+      console.log("✓ [Firebase Storage] Upload completed successfully.");
+      
+      // Retrieve real download URL
+      downloadURL = await getDownloadURL(uploadResult.ref);
+      isCloudUpload = true;
+      console.log("🔗 [Firebase Storage] Download URL retrieved:", downloadURL);
+
+    } catch (err) {
+      console.warn("⚠️ [Firebase Storage Notice] Cloud upload failed:", err.message);
+      console.warn("Saving actual visitor photo to local store so Admin Dashboard testing functions seamlessly.");
+      downloadURL = dataUrl;
+    }
+  } else {
+    // Local simulation mode fallback
+    downloadURL = dataUrl;
+  }
+
+  if (!downloadURL) {
+    throw new Error("Failed to obtain a valid image download URL. Record not saved.");
+  }
+
+  // Save metadata in Firestore / Local collection visitor_uploads
+  const saveResult = await saveVisitorUpload({
     participantId: participantId,
-    fileReference: downloadUrl,
-    uploadType: 'camera_capture'
+    fileName: fileName,
+    downloadURL: downloadURL,
+    uploadType: 'camera',
+    uploadedAt: new Date().toISOString(),
+    consentStatus: 'granted'
   });
 
-  return { success: true, url: downloadUrl, type: 'camera_capture' };
+  return {
+    success: true,
+    fileName: fileName,
+    downloadURL: downloadURL,
+    uploadType: 'camera',
+    isCloudUpload: isCloudUpload,
+    firestoreResult: saveResult
+  };
 }
 
 /**
- * Upload a visitor-selected gallery file to Firebase Storage
+ * Upload a visitor-selected gallery image to Firebase Storage
  */
 export async function uploadGalleryImage(file) {
-  // Validate file
-  if (!ALLOWED_MIME_TYPES.includes(file.type)) {
-    throw new Error("Invalid file format. Please upload JPEG, PNG, or WEBP images only.");
+  if (!file) {
+    throw new Error("No gallery file selected.");
   }
 
+  // Validate MIME type
+  if (file.type && !ALLOWED_MIME_TYPES.includes(file.type)) {
+    throw new Error(`Invalid file type "${file.type}". Allowed formats: JPEG, PNG, WEBP, GIF.`);
+  }
+
+  // Validate size
   if (file.size > MAX_IMAGE_SIZE_BYTES) {
-    throw new Error("File size exceeds 5 MB limit. Please select a smaller photo.");
+    throw new Error(`File size (${(file.size / (1024 * 1024)).toFixed(2)} MB) exceeds 5 MB limit.`);
   }
 
   const participantId = getOrCreateParticipantId();
   const timestamp = Date.now();
   const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-  const storagePath = `visitor_uploads/${participantId}/gallery_${timestamp}_${sanitizedName}`;
+  const fileName = `gallery_${participantId}_${timestamp}_${sanitizedName}`;
+  const storagePath = `visitor_uploads/${participantId}/${fileName}`;
 
-  // Compress image before upload
-  const compressedDataUrl = await optimizeImage(file, 1200, 0.85);
-
-  let downloadUrl = compressedDataUrl;
+  let downloadURL = null;
+  let isCloudUpload = false;
 
   if (storage && isFirebaseConfigured()) {
     try {
+      console.log(`🚀 [Firebase Storage] Uploading gallery file to ${storagePath}...`);
       const fileRef = ref(storage, storagePath);
-      const uploadResult = await uploadString(fileRef, compressedDataUrl, 'data_url', {
-        contentType: 'image/jpeg'
+
+      // Upload the actual file object
+      const uploadResult = await uploadBytes(fileRef, file, {
+        contentType: file.type || 'image/jpeg',
+        customMetadata: {
+          participantId: participantId,
+          originalName: file.name,
+          uploadType: 'gallery',
+          uploadedAt: new Date().toISOString()
+        }
       });
-      downloadUrl = await getDownloadURL(uploadResult.ref);
-      console.log("Uploaded gallery photo to Firebase Storage:", downloadUrl);
+
+      console.log("✓ [Firebase Storage] Gallery upload completed.");
+
+      // Retrieve public download URL
+      downloadURL = await getDownloadURL(uploadResult.ref);
+      isCloudUpload = true;
+      console.log("🔗 [Firebase Storage] Gallery download URL retrieved:", downloadURL);
+
     } catch (err) {
-      console.warn("Firebase Storage upload fallback:", err.message);
-      downloadUrl = compressedDataUrl;
+      console.warn("⚠️ [Firebase Storage Notice] Cloud gallery upload failed:", err.message);
+      console.warn("Saving actual visitor gallery photo to local store so Admin Dashboard testing functions seamlessly.");
+      downloadURL = await fileToDataUrl(file);
+    }
+  } else {
+    downloadURL = await fileToDataUrl(file);
+  }
+
+  if (!downloadURL) {
+    throw new Error("Failed to obtain a valid image download URL. Record not saved.");
+  }
+
+  // Save metadata in Firestore / Local collection visitor_uploads
+  const saveResult = await saveVisitorUpload({
+    participantId: participantId,
+    fileName: file.name || fileName,
+    downloadURL: downloadURL,
+    uploadType: 'gallery',
+    uploadedAt: new Date().toISOString(),
+    consentStatus: 'granted'
+  });
+
+  return {
+    success: true,
+    fileName: file.name || fileName,
+    downloadURL: downloadURL,
+    uploadType: 'gallery',
+    isCloudUpload: isCloudUpload,
+    firestoreResult: saveResult
+  };
+}
+
+/**
+ * Upload multiple visitor-selected gallery images
+ */
+export async function uploadMultipleGalleryImages(files) {
+  if (!files || files.length === 0) {
+    throw new Error("No files selected for upload.");
+  }
+
+  const results = [];
+  const errors = [];
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    try {
+      const res = await uploadGalleryImage(file);
+      results.push(res);
+    } catch (err) {
+      console.error(`Failed to upload ${file.name}:`, err.message);
+      errors.push({ fileName: file.name, error: err.message });
     }
   }
 
-  // Save reference in Firestore visitor_uploads
-  await saveVisitorUpload({
-    participantId: participantId,
-    fileReference: downloadUrl,
-    uploadType: 'gallery_upload'
-  });
+  if (results.length === 0 && errors.length > 0) {
+    throw new Error(`Upload failed: ${errors[0].error}`);
+  }
 
-  return { success: true, url: downloadUrl, type: 'gallery_upload' };
+  return {
+    success: true,
+    total: files.length,
+    uploaded: results.length,
+    results: results,
+    errors: errors
+  };
 }
